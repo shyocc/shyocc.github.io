@@ -1,0 +1,607 @@
+<?xml version="1.0" encoding="utf-8"?>
+<search>
+  <entry>
+    <title>Java 读写 HDFS上的ORC文件</title>
+    <url>/2019/09/02/orcfile/</url>
+    <content><![CDATA[<h2 id="ORC"><a href="#ORC" class="headerlink" title="ORC"></a>ORC</h2><h3 id="ORC简介"><a href="#ORC简介" class="headerlink" title="ORC简介"></a>ORC简介</h3><p>ORC文件是一种以二进制方式存储的，有多种压缩方式的，自解析的文件，所以ORC也是不可以直接读取，它包含许多的元数据，这些元数据都是同构ProtoBuffer进行序列化的</p>
+<h3 id="ORC文件结构"><a href="#ORC文件结构" class="headerlink" title="ORC文件结构"></a>ORC文件结构</h3><ul>
+<li>ORC是列式存储，有多种文件压缩方式，并且有着很高的压缩比。</li>
+<li>一个ORC文件中可以包含多个stripe，每一个stripe包含多条记录，这些记录按照列进行独立存储，对应到Parquet中的row group的概念</li>
+<li>文件是可切分（Split）的。因此，在Hive中使用ORC作为表的文件存储格式，不仅节省HDFS存储资源，查询任务的输入数据量减少，使用的MapTask也就减少了。</li>
+<li>提供了多种索引，row group index、bloom filter index。</li>
+<li>ORC可以支持复杂的数据结构（比如Map等）</li>
+<li>在ORC文件中保存了三个层级的统计信息，分别为文件级别、stripe级别和row group级别的，他们都可以用来根据Search ARGuments（谓词下推条件）判断是否可以跳过某些数据，在统计信息中都包含成员数和是否有null值，并且对于不同类型的数据设置一些特定的统计信息</li>
+</ul>
+<p><img src="https://images.gitee.com/uploads/images/2019/1122/165657_703e601d_5042509.jpeg" alt="orcwenjianzucheng"></p>
+<h4 id="名词解释"><a href="#名词解释" class="headerlink" title="名词解释"></a>名词解释</h4><ul>
+<li>stripe：一组行形成一个stripe，每次读取文件是以行组为单位的，一般为HDFS的块大小，保存了每一列的索引和数据</li>
+<li>stripe元数据：保存stripe的位置、每一个列的在该stripe的统计信息以及所有的stream类型和位置</li>
+<li>row group：索引的最小单位，一个stripe中包含多个row group，默认为10000个值组成</li>
+<li>stream：一个stream表示文件中一段有效的数据，包括索引和数据两类。索引stream保存每一个row group的位置和统计信息，数据stream包括多种类型的数据，具体需要哪几种是由该列类型和编码方式决定<h4 id="列式存储"><a href="#列式存储" class="headerlink" title="列式存储"></a>列式存储</h4>ORC文件相对于关系数据库中通常使用的行式存储，在使用列式存储时每一列的所有元素都是顺序存储的。<br><img src="https://images.gitee.com/uploads/images/2019/1122/165657_f4d584f1_5042509.png" alt="lieshicunchu"></li>
+</ul>
+<p>主要有以下特点：</p>
+<ul>
+<li>每一列的成员都是同构的，可以针对不同的数据类型使用更高效的数据压缩算法，进一步减小I/O</li>
+<li>由于每一列的成员的同构性，可以使用更加适合CPU pipeline的编码方式，减小CPU的缓存失效</li>
+<li>查询的时候不需要扫描全部的数据，而只需要读取每次查询涉及的列，这样可以将I/O消耗降低N倍，另外可以保存每一列的统计信息(min、max、sum等)，实现部分的谓词下推</li>
+<li>ORC在读写时候需要消耗额外的CPU资源来压缩和解压缩，当然这部分的CPU消耗是非常少的</li>
+</ul>
+<h3 id="Java代码"><a href="#Java代码" class="headerlink" title="Java代码"></a>Java代码</h3><figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="comment">// OrcFileSystem</span></span><br><span class="line"><span class="keyword">import</span> org.apache.commons.io.FileUtils;</span><br><span class="line"><span class="keyword">import</span> org.apache.commons.lang.StringUtils;</span><br><span class="line"><span class="keyword">import</span> org.apache.hadoop.conf.Configuration;</span><br><span class="line"><span class="keyword">import</span> org.apache.hadoop.fs.*;</span><br><span class="line"><span class="keyword">import</span> org.apache.hadoop.hive.ql.exec.vector.BytesColumnVector;</span><br><span class="line"><span class="keyword">import</span> org.apache.hadoop.hive.ql.exec.vector.ColumnVector;</span><br><span class="line"><span class="keyword">import</span> org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;</span><br><span class="line"><span class="keyword">import</span> org.apache.log4j.Logger;</span><br><span class="line"><span class="keyword">import</span> org.apache.orc.*;</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> java.io.File;</span><br><span class="line"><span class="keyword">import</span> java.io.IOException;</span><br><span class="line"><span class="keyword">import</span> java.net.URI;</span><br><span class="line"><span class="keyword">import</span> java.net.URISyntaxException;</span><br><span class="line"><span class="keyword">import</span> java.util.ArrayList;</span><br><span class="line"><span class="keyword">import</span> java.util.List;</span><br><span class="line"><span class="keyword">import</span> java.util.Map;</span><br><span class="line"><span class="keyword">import</span> java.util.regex.Matcher;</span><br><span class="line"><span class="keyword">import</span> java.util.regex.Pattern;</span><br><span class="line"></span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * Author: Shyo</span></span><br><span class="line"><span class="comment"> * Blog: shyocc.github.io</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">OrcFileSystem</span> </span>&#123;</span><br><span class="line">    <span class="comment">//private static Logger log = Logger.getLogger(OrcFileSystem.class);</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * orc文件读写的conf参数：</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * 参数名                           默认值                  说明</span></span><br><span class="line"><span class="comment">     * hive.exec.orc.default.stripe.size   256 * 1024 * 1024    stripe的默认大小</span></span><br><span class="line"><span class="comment">     * hive.exec.orc.default.block.size   256 * 1024 * 1024    orc文件在文件系统中的默认block大小，从hive-0.14开始</span></span><br><span class="line"><span class="comment">     * hive.exec.orc.dictionary.key.size.threshold  0.8         String类型字段使用字典编码的阈值</span></span><br><span class="line"><span class="comment">     * hive.exec.orc.default.row.index.stride    10000        stripe中的分组大小</span></span><br><span class="line"><span class="comment">     * hive.exec.orc.default.compress        ZLIB      ORC文件的默认压缩方式</span></span><br><span class="line"><span class="comment">     * hive.exec.orc.skip.corrupt.data        false       遇到错误数据的处理方式，false直接抛出异常，true则跳过该记录</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> Configuration conf = <span class="keyword">new</span> Configuration();</span><br><span class="line">    <span class="keyword">private</span> FileSystem fs;</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> String fileSeparator = System.getProperty(<span class="string">"file.separator"</span>);</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="title">OrcFileSystem</span><span class="params">(String fsDefaultFSURI)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            <span class="keyword">this</span>.fs = FileSystem.get(<span class="keyword">new</span> URI(fsDefaultFSURI), <span class="keyword">this</span>.conf);</span><br><span class="line">        &#125; <span class="keyword">catch</span> (Exception e) &#123;</span><br><span class="line">            e.printStackTrace();</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="title">OrcFileSystem</span><span class="params">(URI fsDefaultFSURI)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            <span class="keyword">this</span>.fs = FileSystem.get(fsDefaultFSURI, <span class="keyword">this</span>.conf);</span><br><span class="line">        &#125; <span class="keyword">catch</span> (Exception e) &#123;</span><br><span class="line">            e.printStackTrace();</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="title">OrcFileSystem</span><span class="params">(FileSystem fs)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">this</span>.fs = fs;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * Map&lt;String,String&gt; confs</span></span><br><span class="line"><span class="comment">     * 	"fs.defaultFS": "hdfs://nameservice1",</span></span><br><span class="line"><span class="comment">     * 	"dfs.nameservices": "nameservice1",</span></span><br><span class="line"><span class="comment">     * 	"dfs.client.failover.proxy.provider.nameservice1": "org.apache.hadoop.hdfs.server.namenode.ha.ConfiguredFailoverProxyProvider",</span></span><br><span class="line"><span class="comment">     * 	"dfs.ha.namenodes.nameservice1": "namenode230,namenode267",</span></span><br><span class="line"><span class="comment">     * 	"dfs.namenode.rpc-address.nameservice1.namenode230": "e11ecmrhdp01.mercury.corp:8020",</span></span><br><span class="line"><span class="comment">     * 	"dfs.namenode.rpc-address.nameservice1.namenode267": "e11ecmrhdp02.mercury.corp:8020",</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> confs</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="title">OrcFileSystem</span><span class="params">(Map&lt;String,String&gt; confs)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">this</span>.conf = <span class="keyword">new</span> Configuration();</span><br><span class="line">        confs.forEach((name,value) -&gt; &#123;</span><br><span class="line">            conf.set(name,value);</span><br><span class="line">        &#125;);</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            <span class="keyword">this</span>.fs = FileSystem.newInstance(conf);</span><br><span class="line">        &#125; <span class="keyword">catch</span> (IOException e) &#123;</span><br><span class="line">            e.printStackTrace();</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">list</span><span class="params">(Path hdfsPath)</span> <span class="keyword">throws</span> IOException </span>&#123;</span><br><span class="line">        <span class="keyword">if</span> (!fs.exists(hdfsPath)) &#123;</span><br><span class="line">            <span class="comment">//log.error("该路径不存在！");</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (!fs.getFileStatus(hdfsPath).isDirectory()) &#123;</span><br><span class="line">            <span class="comment">//log.error("该路径不是一个DIR！");</span></span><br><span class="line">        &#125;</span><br><span class="line">        FileStatus[] files = fs.listStatus(hdfsPath);</span><br><span class="line">        <span class="keyword">for</span> (FileStatus file : files) &#123;</span><br><span class="line">            System.out.println((file.isDirectory() ? <span class="string">"Dir  - "</span> : <span class="string">"File - "</span>) + file.getPath().toString());</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">listAll</span><span class="params">(Path hdfsPath)</span> <span class="keyword">throws</span> IOException </span>&#123;</span><br><span class="line">        <span class="keyword">if</span> (!fs.exists(hdfsPath)) &#123;</span><br><span class="line">            <span class="comment">//log.error("该路径不存在！");</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (!fs.getFileStatus(hdfsPath).isDirectory()) &#123;</span><br><span class="line">            <span class="comment">//log.error("该路径不是一个DIR！");</span></span><br><span class="line">        &#125;</span><br><span class="line">        FileStatus[] files = fs.listStatus(hdfsPath);</span><br><span class="line">        <span class="keyword">for</span> (FileStatus file : files) &#123;</span><br><span class="line">            <span class="keyword">if</span> (file.isDirectory()) &#123;</span><br><span class="line">                listAll(file.getPath());</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                System.out.println(file.getPath().toString());</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 利用RemoteIterator和FS的listFiles方法打印出所有的文件路径</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> hdfsPath</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@throws</span> IOException</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">listAllAuto</span><span class="params">(Path hdfsPath)</span> <span class="keyword">throws</span> IOException </span>&#123;</span><br><span class="line">        <span class="keyword">if</span> (!fs.exists(hdfsPath)) &#123;</span><br><span class="line">            <span class="comment">//log.error("该路径不存在！");</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (!fs.getFileStatus(hdfsPath).isDirectory()) &#123;</span><br><span class="line">            <span class="comment">//log.error("该路径不是一个DIR！");</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">//获取RemoteIterator 得到所有的文件，第一个参数指定遍历的路径，第二个参数表示是否要递归遍历</span></span><br><span class="line">        RemoteIterator&lt;LocatedFileStatus&gt; files = fs.listFiles(hdfsPath,<span class="keyword">true</span>);</span><br><span class="line">        <span class="keyword">while</span> (files.hasNext()) &#123;</span><br><span class="line">            LocatedFileStatus file = files.next();</span><br><span class="line">            System.out.println(file.getPath().toString());</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * hdfsPath要使用完整uri，比如</span></span><br><span class="line"><span class="comment">     * hdfs://ip:port/user/hive/warehouse/datafeed.db/user/city=xian/000000_0</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> hdfsPath</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> localPath</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@throws</span> Exception</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">read</span><span class="params">(Path hdfsPath, String localPath, String split)</span> <span class="keyword">throws</span> Exception</span>&#123;</span><br><span class="line">        List&lt;String&gt; allRowStr = <span class="keyword">new</span> ArrayList&lt;&gt;();</span><br><span class="line">        <span class="keyword">if</span> (!fs.exists(hdfsPath)) &#123;</span><br><span class="line">            System.out.println(<span class="string">"orc file does not exists"</span>);</span><br><span class="line">            <span class="keyword">return</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (fs.isDirectory(hdfsPath)) &#123;</span><br><span class="line">            System.out.println(<span class="string">"the path is a dir, please use readDir func"</span>);</span><br><span class="line">            <span class="keyword">return</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (StringUtils.isBlank(localPath)) &#123;</span><br><span class="line">            localPath = System.getProperty(<span class="string">"user.dir"</span>) + fileSeparator + <span class="string">"data"</span> + fileSeparator + <span class="string">"tmp.txt"</span>;</span><br><span class="line">            System.out.println(<span class="string">"localPath changed because it is null - "</span> + localPath);</span><br><span class="line">        &#125;</span><br><span class="line">        File localFile = <span class="keyword">new</span> File(localPath);</span><br><span class="line">        <span class="keyword">if</span> (!localFile.exists()) &#123;</span><br><span class="line">            FileUtils.touch(localFile);</span><br><span class="line">        &#125;</span><br><span class="line">        Configuration readConf = <span class="keyword">this</span>.conf;</span><br><span class="line">        Reader reader = OrcFile.createReader(hdfsPath,OrcFile.readerOptions(<span class="keyword">this</span>.conf));</span><br><span class="line">        RecordReader rows = reader.rows();</span><br><span class="line">        <span class="comment">// createRowBatch可以设置读取数据的量，不设置的话默认是全部，那么下面的while循环只会循环一次</span></span><br><span class="line">        <span class="comment">// 假设设置maxSize = 1000，那么会有totla/1000个batch</span></span><br><span class="line">        VectorizedRowBatch batch = reader.getSchema().createRowBatch();</span><br><span class="line">        <span class="comment">// schema是orc的列，用hive表来说就是字段,</span></span><br><span class="line">        System.out.println(<span class="string">"schema: "</span> + reader.getSchema());</span><br><span class="line">        <span class="comment">// numCols是orc文件的列数,projectionSize = 3 = numCols,这两个属性不知道有什么区别</span></span><br><span class="line">        System.out.println(<span class="string">"cols: "</span> + batch.numCols + <span class="string">", projectSize: "</span> + batch.projectionSize);</span><br><span class="line">        <span class="comment">// batch.projectedColumns是一个int数组，projectedColumns[0,1,2] = 0,1,2，我也不知道有什么意义</span></span><br><span class="line">        <span class="comment">//for (int i = 0;i&lt;batch.projectedColumns.length;i++) &#123;</span></span><br><span class="line">            <span class="comment">//System.out.println("projectColums: " + i + "," + batch.projectedColumns[i]);</span></span><br><span class="line">        <span class="comment">//&#125;</span></span><br><span class="line">        <span class="comment">/**</span></span><br><span class="line"><span class="comment">         * 循环流程：</span></span><br><span class="line"><span class="comment">         * 1. batch的循环</span></span><br><span class="line"><span class="comment">         * 2. row的循环</span></span><br><span class="line"><span class="comment">         * 3. 每个row中col的循环（先循环col，再用row直接定位到行）</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        <span class="comment">// rows.nextBatch(batch) 一开始batch是没有数据的，需要nextBatch方法才会有数据</span></span><br><span class="line">        <span class="keyword">while</span> (rows.nextBatch(batch)) &#123;</span><br><span class="line">            <span class="comment">// row表示该batch数据集的第row行</span></span><br><span class="line">            <span class="keyword">for</span> (<span class="keyword">int</span> row = <span class="number">0</span>; row &lt; batch.size; row ++) &#123;</span><br><span class="line">                <span class="comment">// cols</span></span><br><span class="line">                allRowStr.add(String.join(split,rowToString(batch,row)));</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// false表示不是append</span></span><br><span class="line">        FileUtils.writeLines(localFile,allRowStr,<span class="keyword">false</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> batch</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> row</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span> 一行数据，按列存储成一个list</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="function"><span class="keyword">private</span> List&lt;String&gt; <span class="title">rowToString</span><span class="params">(VectorizedRowBatch batch, <span class="keyword">int</span> row)</span> </span>&#123;</span><br><span class="line">        List&lt;String&gt; colsValue = <span class="keyword">new</span> ArrayList&lt;&gt;();</span><br><span class="line">        <span class="comment">// 按列数循环，有多少列循环多少次</span></span><br><span class="line">        <span class="keyword">for</span> (<span class="keyword">int</span> i = <span class="number">0</span>;i &lt; batch.projectionSize; i++) &#123;</span><br><span class="line">            <span class="comment">// 定位到第i列</span></span><br><span class="line">            ColumnVector cv = batch.cols[i];</span><br><span class="line">            <span class="keyword">if</span> (cv != <span class="keyword">null</span>) &#123;</span><br><span class="line">                StringBuilder sb = <span class="keyword">new</span> StringBuilder();</span><br><span class="line">                <span class="keyword">try</span> &#123;</span><br><span class="line">                    <span class="keyword">if</span> (cv.noNulls || cv.isNull[row]) &#123;</span><br><span class="line">                        <span class="comment">// 把第row行第i列的值转换成StringBuilder</span></span><br><span class="line">                        <span class="comment">// 注意：这里是用append的方法赋值给StringBuilder</span></span><br><span class="line">                        cv.stringifyValue(sb,row);</span><br><span class="line">                    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                        <span class="comment">// null to ""</span></span><br><span class="line">                        sb.append(<span class="string">""</span>);</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125; <span class="keyword">catch</span> (Exception e) &#123;</span><br><span class="line">                    sb.append(<span class="string">""</span>);</span><br><span class="line">                &#125;</span><br><span class="line">                colsValue.add(trimAndReplace(sb.toString()));</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                colsValue.add(<span class="string">""</span>);</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> colsValue;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// cv.stringifyValue(sb,row);得到的字段是"xxx"格式的，应该去掉""</span></span><br><span class="line">    <span class="function"><span class="keyword">private</span> String <span class="title">trimAndReplace</span><span class="params">(String s)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">if</span> (s == <span class="keyword">null</span> || s.trim().length() == <span class="number">0</span>) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="string">""</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (s.startsWith(<span class="string">"\""</span>)) &#123;</span><br><span class="line">            s = s.substring(<span class="number">1</span>);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (s.endsWith(<span class="string">"\""</span>)) &#123;</span><br><span class="line">            s = s.substring(<span class="number">0</span>, s.length() - <span class="number">1</span>);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> s.replaceAll(<span class="string">"[\\\r\\\n]+"</span>, <span class="string">" "</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 如果f是一个文件或空目录，那么recursive的值就会被忽略。只有在recrusive值为true时，非空目录及其内容才会被删除（否则会抛出IOException异常）</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">boolean</span> <span class="title">delete</span><span class="params">(String hdfsPath, <span class="keyword">boolean</span> recursive)</span> </span>&#123;</span><br><span class="line">        Path path = <span class="keyword">new</span> Path(hdfsPath);</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            <span class="keyword">if</span> (!fs.exists(path)) &#123;</span><br><span class="line">                System.out.println(<span class="string">"文件不存在!"</span>);</span><br><span class="line">                <span class="keyword">return</span> <span class="keyword">false</span>;</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                fs.delete(path,recursive);</span><br><span class="line">                <span class="keyword">return</span> <span class="keyword">true</span>;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125; <span class="keyword">catch</span> (IOException e) &#123;</span><br><span class="line">            e.printStackTrace();</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">false</span>;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * write涉及schema的创建和batch中col的初始化，这些比较难找到通用的方法，所以对于不同的orc文件，基本上都要重新写一个对应的函数，没有通用的。</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * 写文件时居然不用设置分隔符，很奇怪，不知道是因为默认的没问题还是writer可以自己读取分隔符</span></span><br><span class="line"><span class="comment">     * 用本地文件路径测试的时候发现OrcFile.createWriter报错，可能写不了本地的orc文件</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> filePath</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> conf</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> schemaStr</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span></span></span><br><span class="line"><span class="comment">     * <span class="doctag">@throws</span> IOException</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">int</span> <span class="title">write</span><span class="params">(String filePath, Configuration conf, String schemaStr, <span class="keyword">boolean</span> append)</span> <span class="keyword">throws</span> IOException</span>&#123;</span><br><span class="line">        <span class="keyword">int</span> total = <span class="number">0</span>;</span><br><span class="line">        Pattern p = Pattern.compile(<span class="string">"struct&lt;(.*)&gt;"</span>);</span><br><span class="line">        Matcher m = p.matcher(schemaStr);</span><br><span class="line">        String schemaColumns = <span class="string">""</span>;</span><br><span class="line">        <span class="keyword">if</span> (m.find()) &#123;</span><br><span class="line">            schemaColumns = m.group(<span class="number">1</span>);</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            System.out.println(<span class="string">"schema struct error, please check: "</span> + schemaStr);</span><br><span class="line">            <span class="keyword">return</span> -<span class="number">1</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (conf == <span class="keyword">null</span>) &#123;</span><br><span class="line">            conf = <span class="keyword">this</span>.conf;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 使用fromString方法初始化一个schema</span></span><br><span class="line">        <span class="comment">// 还可以用TypeDescription.createStruct().addField("field-name", TypeDescription.createString()).addfield()....的方法创建</span></span><br><span class="line">        TypeDescription schema = TypeDescription.fromString(schemaStr);</span><br><span class="line">        Path path = <span class="keyword">new</span> Path(filePath);</span><br><span class="line">        <span class="comment">// 不支持append，即如果filepath已经存在，无法写入,需要删除</span></span><br><span class="line">        <span class="comment">// 在hive上实现append只需要在hive表的目录下再创建一个文件，所以无影响</span></span><br><span class="line">        <span class="keyword">if</span> (fs.exists(path)) &#123;</span><br><span class="line">            <span class="comment">// 如果选择append的话，重建一个文件</span></span><br><span class="line">            <span class="keyword">if</span> (append) &#123;</span><br><span class="line">                path = <span class="keyword">new</span> Path(filePath + <span class="string">"_0"</span>);</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                delete(filePath,<span class="keyword">false</span>);</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        Writer writer = OrcFile.createWriter(path, OrcFile.writerOptions(conf).setSchema(schema));</span><br><span class="line">        <span class="comment">// 真正存数据的地方</span></span><br><span class="line">        VectorizedRowBatch batch = schema.createRowBatch();</span><br><span class="line">        <span class="comment">/**</span></span><br><span class="line"><span class="comment">         * BytesColumnVector -&gt; string -&gt; TypeDescription.createString()</span></span><br><span class="line"><span class="comment">         * LongColumnVector -&gt; int,long,boolean(1,0),date -&gt; TypeDescription.createInt(),TypeDescription.createLong(),TypeDescription.createBoolean(),TypeDescription.createDate()</span></span><br><span class="line"><span class="comment">         * DoubleColumnVector -&gt; double,float -&gt; TypeDescription.createDouble(),TypeDescription.createFloat()</span></span><br><span class="line"><span class="comment">         * TimestampColumnVector -&gt; timestamp -&gt; TypeDescription.createTimestamp()</span></span><br><span class="line"><span class="comment">         *</span></span><br><span class="line"><span class="comment">         * 特殊：map&lt;type1,type2&gt;</span></span><br><span class="line"><span class="comment">         *     // 定义map列，对key和value要做cast</span></span><br><span class="line"><span class="comment">         *     MapColumnVector map = (MapColumnVector) batch.cols[2];</span></span><br><span class="line"><span class="comment">         *     BytesColumnVector mapKey = (BytesColumnVector) map.keys;</span></span><br><span class="line"><span class="comment">         *     LongColumnVector mapValue = (LongColumnVector) map.values;</span></span><br><span class="line"><span class="comment">         *     // 每个map包含5个元素</span></span><br><span class="line"><span class="comment">         *     final int MAP_SIZE = 5;</span></span><br><span class="line"><span class="comment">         * 	   final int BATCH_SIZE = batch.getMaxSize();</span></span><br><span class="line"><span class="comment">         * 	   // 确保map的空间充足</span></span><br><span class="line"><span class="comment">         * 	   mapKey.ensureSize(BATCH_SIZE * MAP_SIZE, false);</span></span><br><span class="line"><span class="comment">         * 	   mapValue.ensureSize(BATCH_SIZE * MAP_SIZE, false);</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        BytesColumnVector name = (BytesColumnVector)batch.cols[<span class="number">0</span>];</span><br><span class="line">        BytesColumnVector id = (BytesColumnVector)batch.cols[<span class="number">1</span>];</span><br><span class="line">        BytesColumnVector desc = (BytesColumnVector)batch.cols[<span class="number">2</span>];</span><br><span class="line"></span><br><span class="line">        <span class="keyword">for</span> (<span class="keyword">int</span> r = <span class="number">0</span>; r &lt; <span class="number">5000</span>; ++r) &#123;</span><br><span class="line">            <span class="comment">// 刚开始batch.size = 0，在一个batch即r=1024的时候，r=row=batch.size</span></span><br><span class="line">            <span class="comment">// 到第第二个以后的batch时,r&gt;1023 , row = 0~1024 = batch.size</span></span><br><span class="line">            <span class="comment">// batch的col为0~1023，所以必须维护一个row，不能直接用r</span></span><br><span class="line">            <span class="keyword">int</span> row = batch.size++;</span><br><span class="line">            System.out.println(<span class="string">"r: "</span> + r + <span class="string">", row: "</span> + row + <span class="string">", batch.size: "</span> + batch.size);</span><br><span class="line">            <span class="comment">/**</span></span><br><span class="line"><span class="comment">             * BytesColumnVector: vector.setVal(row,data.getBytes())</span></span><br><span class="line"><span class="comment">             * LongColumnVector,DoubleColumnVector: vector.vector[row] = data</span></span><br><span class="line"><span class="comment">             * TimestampColumnVector: vector.set(row,Timestamp.class)</span></span><br><span class="line"><span class="comment">             *</span></span><br><span class="line"><span class="comment">             * // 处理map列偏移</span></span><br><span class="line"><span class="comment">             * 			map.offsets[row] = map.childCount;</span></span><br><span class="line"><span class="comment">             * 			map.lengths[row] = MAP_SIZE;</span></span><br><span class="line"><span class="comment">             * 			map.childCount += MAP_SIZE;</span></span><br><span class="line"><span class="comment">             * 	// 处理map列的值</span></span><br><span class="line"><span class="comment">             * 			for (int mapElem = (int) map.offsets[row]; mapElem &lt; map.offsets[row] + MAP_SIZE; ++mapElem) &#123;</span></span><br><span class="line"><span class="comment">             * 				String key = "row " + r + "." + (mapElem - map.offsets[row]);</span></span><br><span class="line"><span class="comment">             * 				mapKey.setVal(mapElem, key.getBytes(StandardCharsets.UTF_8));</span></span><br><span class="line"><span class="comment">             * 				mapValue.vector[mapElem] = mapElem;</span></span><br><span class="line"><span class="comment">             *          &#125;</span></span><br><span class="line"><span class="comment">             *</span></span><br><span class="line"><span class="comment">             */</span></span><br><span class="line">            name.setVal(row,(<span class="string">"user-"</span> + r + <span class="string">"-"</span> + row).getBytes());</span><br><span class="line">            id.setVal(row,(<span class="string">"password-"</span> + r + <span class="string">"-"</span> + row).getBytes());</span><br><span class="line">            desc.setVal(row,(<span class="string">"desc-"</span> + r + <span class="string">"-"</span> + row).getBytes());</span><br><span class="line">            total = total + <span class="number">1</span>;</span><br><span class="line">            <span class="comment">// 默认每个batch为1024行，如果满了，则新起一个batch.</span></span><br><span class="line">            <span class="keyword">if</span> (batch.size == batch.getMaxSize()) &#123;</span><br><span class="line">                <span class="comment">// 写入orc文件</span></span><br><span class="line">                writer.addRowBatch(batch);</span><br><span class="line">                <span class="comment">// 重置（清空）batch</span></span><br><span class="line">                batch.reset();</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 确保没有遗漏的数据，因为在for循环里只有batch满了才会写入</span></span><br><span class="line">        <span class="keyword">if</span> (batch.size != <span class="number">0</span>) &#123;</span><br><span class="line">            writer.addRowBatch(batch);</span><br><span class="line">            batch.reset();</span><br><span class="line">        &#125;</span><br><span class="line">        writer.close();</span><br><span class="line">        <span class="keyword">return</span> total;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>]]></content>
+      <categories>
+        <category>大数据</category>
+        <category>Java</category>
+      </categories>
+      <tags>
+        <tag>Hive</tag>
+        <tag>Orc</tag>
+        <tag>Java</tag>
+        <tag>HDFS</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>load本地数据到hive的Orc表失败</title>
+    <url>/2019/08/19/local-data-to-orc-error/</url>
+    <content><![CDATA[<h2 id="加载本地文件数据到hive的orc表出错"><a href="#加载本地文件数据到hive的orc表出错" class="headerlink" title="加载本地文件数据到hive的orc表出错"></a>加载本地文件数据到hive的orc表出错</h2><h3 id="报错操作"><a href="#报错操作" class="headerlink" title="报错操作"></a>报错操作</h3><p>user table</p>
+<figure class="highlight sql"><table><tr><td class="code"><pre><span class="line"><span class="keyword">create</span> <span class="keyword">table</span> <span class="keyword">if</span> <span class="keyword">not</span> <span class="keyword">exists</span> <span class="keyword">user</span>(</span><br><span class="line">  username <span class="keyword">string</span> <span class="keyword">comment</span> <span class="string">'the name of user'</span>,</span><br><span class="line">  <span class="string">`password`</span> <span class="keyword">string</span> <span class="keyword">comment</span> <span class="string">' '</span>,</span><br><span class="line">  <span class="string">`description`</span> <span class="keyword">string</span> <span class="keyword">comment</span> <span class="string">''</span>)</span><br><span class="line">partitioned <span class="keyword">by</span> (</span><br><span class="line">  city <span class="keyword">string</span> <span class="keyword">comment</span> <span class="string">''</span>)</span><br><span class="line"><span class="keyword">row</span> <span class="keyword">format</span> <span class="keyword">delimited</span> <span class="keyword">fields</span> <span class="keyword">terminated</span> <span class="keyword">by</span> <span class="string">'\001'</span></span><br><span class="line"><span class="keyword">stored</span> <span class="keyword">as</span> orc;</span><br></pre></td></tr></table></figure>
+
+<p><code>load data local inpath &#39;/data/test_data.txt&#39; overwrite into table user partition(city=&#39;xian&#39;)</code></p>
+<blockquote>
+<p>INFO  : Compiling command(queryId=bigdata_20191120162626_ed5f53ff-1593-4dd5-a3e2-c9be8c8d15b9): load data local inpath ‘/data/shylock/user_data.txt’ overwrite into table user partition(city=’xian’)<br>INFO  : Semantic Analysis Completed<br>INFO  : Returning Hive schema: Schema(fieldSchemas:null, properties:null)<br>INFO  : Completed compiling command(queryId=bigdata_20191120162626_ed5f53ff-1593-4dd5-a3e2-c9be8c8d15b9); Time taken: 0.093 seconds<br>INFO  : Concurrency mode is disabled, not creating a lock manager<br>INFO  : Executing command(queryId=bigdata_20191120162626_ed5f53ff-1593-4dd5-a3e2-c9be8c8d15b9): load data local inpath ‘/data/shylock/user_data.txt’ overwrite into table user partition(city=’xian’)<br>INFO  : Starting task [Stage-0:MOVE] in serial mode<br>INFO  : Loading data to table datafeed.user partition (city=xian) from file:/data/shylock/user_data.txt<br>INFO  : Starting task [Stage-1:STATS] in serial mode<br>INFO  : Partition datafeed.user{city=xian} stats: [numFiles=1, numRows=0, totalSize=176, rawDataSize=0]<br>INFO  : Completed executing command(queryId=bigdata_20191120162626_ed5f53ff-1593-4dd5-a3e2-c9be8c8d15b9); Time taken: 1.0 seconds<br>INFO  : OK<br>No rows affected (1.1 seconds)</p>
+</blockquote>
+<p>ok 看起来没有报错,select一下</p>
+<p><code>select * from user</code></p>
+<blockquote>
+<p>Error: java.io.IOException: java.io.IOException: Malformed ORC file</p>
+</blockquote>
+<h3 id="报错原因"><a href="#报错原因" class="headerlink" title="报错原因"></a>报错原因</h3><p>hive的load data操作看起来只是简单的把本地的文件put到对应的hive表的hdfs location而已。</p>
+<p>ORC格式是列式存储的表，只能读出来orc格式的文件的数据。因此不能直接从本地文件导入数据，只有当数据源表也是ORC格式存储时，才可以直接加载，否则会出现上述报错。</p>
+<h3 id="解决办法"><a href="#解决办法" class="headerlink" title="解决办法"></a>解决办法</h3><ol>
+<li>创建user的临时表</li>
+<li>导入本地数据</li>
+<li>insert into table orc_table select * from tmp_table</li>
+</ol>
+]]></content>
+      <categories>
+        <category>大数据</category>
+        <category>Bug</category>
+      </categories>
+      <tags>
+        <tag>Hive</tag>
+        <tag>Bug</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>在Hadoop2.6-CDH5.8.3的基础上配置Hive1.1.0-CDH5.8.3</title>
+    <url>/2019/08/17/build-hive/</url>
+    <content><![CDATA[<h2 id="gt-gt-搭建Hive-lt-lt"><a href="#gt-gt-搭建Hive-lt-lt" class="headerlink" title="&gt;&gt; 搭建Hive &lt;&lt;"></a>&gt;&gt; 搭建Hive &lt;&lt;</h2><h3 id="环境说明"><a href="#环境说明" class="headerlink" title="环境说明"></a>环境说明</h3><ul>
+<li>hadoop-2.6.0-cdh5.8.3</li>
+<li>MariaDB 10.3.10</li>
+<li>mysql-connector-java-8.0.17.jar</li>
+</ul>
+<h3 id="下载并解压安装包"><a href="#下载并解压安装包" class="headerlink" title="下载并解压安装包"></a>下载并解压安装包</h3><p><strong>(路径自己定义)</strong></p>
+<ul>
+<li><code>wget http://archive.cloudera.com/cdh5/cdh/5/hive-1.1.0-cdh5.8.3.tar.gz</code></li>
+<li><code>tar -zxvf hive-1.1.0-cdh5.8.3.tar.gz</code></li>
+</ul>
+<h3 id="配置环境变量"><a href="#配置环境变量" class="headerlink" title="配置环境变量"></a>配置环境变量</h3><p><code>vim /etc/profile</code></p>
+<pre><code>#/etc/profile
+HIVE_HOME=/data/bigdata/hive-1.1.0-cdh5.8.3/
+PATH=$PATH:$HBASE_HOME:$HIVE_HOME/bin
+export PATH</code></pre><p><code>source /etc/profile</code></p>
+<h3 id="修改hive配置文件"><a href="#修改hive配置文件" class="headerlink" title="修改hive配置文件"></a>修改hive配置文件</h3><p><code>mv hive-env.sh.template ./hive-env.sh &amp;&amp; vim hive-env.sh</code></p>
+<pre><code># Set HADOOP_HOME to point to a specific hadoop install directory
+HADOOP_HOME=/home/hadoop/app/hadoop-2.6.0-cdh5.7.0</code></pre><p><code>vim hive-site.xml</code></p>
+<pre><code>&lt;configuration&gt;
+  &lt;property&gt;
+    &lt;name&gt;hive.exec.scratchdir&lt;/name&gt;
+    &lt;value&gt;/data/bigdata/hive-1.1.0-cdh5.8.3/tmp/hive-${user.name}&lt;/value&gt;
+    &lt;description&gt;Scratch space for Hive jobs&lt;/description&gt;
+  &lt;/property&gt;
+  &lt;property&gt;
+    &lt;name&gt;javax.jdo.option.ConnectionURL&lt;/name&gt;
+    &lt;value&gt;jdbc:mysql://hostnameorip:3306/hive?createDatabaseIfNotExist=true&lt;/value&gt;
+    &lt;description&gt;JDBC connect string for a JDBC metastore&lt;/description&gt;
+  &lt;/property&gt;
+  &lt;property&gt;
+    &lt;name&gt;javax.jdo.option.ConnectionDriverName&lt;/name&gt;
+    &lt;value&gt;com.mysql.cj.jdbc.Driver&lt;/value&gt;
+    &lt;description&gt;Driver class name for a JDBC metastore&lt;/description&gt;
+  &lt;/property&gt;
+  &lt;property&gt;
+    &lt;name&gt;javax.jdo.option.ConnectionUserName&lt;/name&gt;
+    &lt;value&gt;db-username&lt;/value&gt;
+    &lt;description&gt;username to use against metastore database&lt;/description&gt;
+  &lt;/property&gt;
+  &lt;property&gt;
+    &lt;name&gt;javax.jdo.option.ConnectionPassword&lt;/name&gt;
+    &lt;value&gt;db-password&lt;/value&gt;
+    &lt;description&gt;password to use against metastore database&lt;/description&gt;
+  &lt;/property&gt;
+&lt;/configuration&gt;</code></pre><p><code>mv mysql-connector-java-8.0.17.jar /hive_home/lib/</code></p>
+<h3 id="启动hive"><a href="#启动hive" class="headerlink" title="启动hive"></a>启动hive</h3><ol>
+<li><p>首先确认hadoop集群和mariadb已经启动</p>
+</li>
+<li><p>在MariaDB/Mysql中创建hive库</p>
+</li>
+<li><p>执行hive命令初始化hive库<br> <code>schematool -dbType mysql -initSchema</code></p>
+<blockquote>
+<p>注意：如果没有执行该步骤，在启动hive或后续beeline链接的时候会hive的元数据库中没有需要的表抛出MetaStoreException<br>小问题： 虽然在hive-site.xml的元数据库连接javax.jdo.option.ConnectionURL中配置了createDatabaseIfNotExist=true，但似乎不起作用</p>
+</blockquote>
+</li>
+<li><p>编写hive启动脚本并启动 &amp;&amp; 查看日志</p>
+</li>
+</ol>
+<p><code>vim start-hive.sh &amp;&amp; sh start-hive.sh</code></p>
+<pre><code>#start-hive.sh
+nohup /data/bigdata/hive-1.1.0-cdh5.8.3/bin/hive --service metastore &gt;&gt; ~/metastore.log 2&gt;&amp;1 &amp;
+echo &quot;start metasore&quot;
+nohup /data/bigdata/hive-1.1.0-cdh5.8.3/bin/hive --service hiveserver2 &gt;&gt; ~/hiveserver2.log 2&gt;&amp;1 &amp;
+echo &quot;start hiveserver2&quot;</code></pre><blockquote>
+<p>注意：如果不启动hiveserver2，无法使用jdbc连接hive</p>
+</blockquote>
+<p>查看<del>/metastore.log、</del>/hiveserver2.log以及/tmp/bigdata/hive.log日志<br>查看hive进程<code>ps -aux|grep hive</code><br>查看端口9083(metastore)、10000(hiveserver2)是否有进程运行<code>lsof -i:9083 &amp;&amp; lsof -i:10000</code></p>
+<h3 id="beeline连接测试hive"><a href="#beeline连接测试hive" class="headerlink" title="beeline连接测试hive"></a>beeline连接测试hive</h3><pre><code>beeline -u jdbc:hive2://host:10000 -n username -p password #-f create_table.sql
+show tables;
+#success!</code></pre><h2 id="gt-gt-遇到的几个Bug-lt-lt"><a href="#gt-gt-遇到的几个Bug-lt-lt" class="headerlink" title="&gt;&gt; 遇到的几个Bug &lt;&lt;"></a>&gt;&gt; 遇到的几个Bug &lt;&lt;</h2><h3 id="mariadb驱动错误"><a href="#mariadb驱动错误" class="headerlink" title="mariadb驱动错误"></a>mariadb驱动错误</h3><blockquote>
+<p>Caused by: org.datanucleus.exceptions.NucleusException:<br>  Attempt to invoke the “BONECP” plugin to create a ConnectionPool gave an error :<br>  he specified datastore driver (“com.mysql.cj.jdbc.Driver”) was not found in the CLASSPATH.<br>  Please check your CLASSPATH specification, and the name of the driver.</p>
+</blockquote>
+<p>原因：hive安装包/lib文件夹中的驱动版本与数据库不对应<br>注意：低版本的mysql/mariadb不要使用<code>com.mysql.cj.jdbc.Driver</code>，使用<code>com.mysql.jdbc.Driver</code></p>
+<h3 id="建表失败，元数据库错误"><a href="#建表失败，元数据库错误" class="headerlink" title="建表失败，元数据库错误"></a>建表失败，元数据库错误</h3><blockquote>
+<p> metastore.RetryingHMSHandler (RetryingHMSHandler.java:invokeInternal(203)) - Retrying HMSHandler after 2000 ms (attempt 1 of 10) with error: javax.jdo.JDOFatalInternalException: Cannot add <code>SERDES</code>.<code>SERDE_ID</code> as referenced FK column for <code>CDS</code><br>NestedThrowablesStackTrace: Cannot add <code>SERDES</code>.<code>SERDE_ID</code> as referenced FK column for <code>CDS</code><br>org.datanucleus.exceptions.NucleusException: Cannot add <code>SERDES</code>.<code>SERDE_ID</code> as referenced FK column for <code>CDS</code></p>
+</blockquote>
+<p>原因：没有执行<code>schematool -dbType mysql -initSchema</code>命令</p>
+<h3 id="执行schematool-dbType-mysql-initSchema报错"><a href="#执行schematool-dbType-mysql-initSchema报错" class="headerlink" title="执行schematool -dbType mysql -initSchema报错"></a>执行<code>schematool -dbType mysql -initSchema</code>报错</h3><blockquote>
+<p>Schema initialization FAILED! Metastore state would be inconsistent !!<br>架构初始化失败！ Metastore状态会不一致!!</p>
+</blockquote>
+<p>原因：直接迁移了其他集群的hive元数据库<br>解决：删除元数据库，重新create database，执行<code>schematool -dbType mysql -initSchema</code></p>
+<h3 id="字符集设定的问题"><a href="#字符集设定的问题" class="headerlink" title="字符集设定的问题"></a>字符集设定的问题</h3><p>查了很多资料说元数据库的字符应设定为latin1，但是我设定为utf8mb4也没问题，可能时hive版本或是hive-cdh的问题</p>
+<h3 id="导入数据到分区表出错"><a href="#导入数据到分区表出错" class="headerlink" title="导入数据到分区表出错"></a>导入数据到分区表出错</h3><blockquote>
+<p>Failed with exception MetaException(message:For direct MetaStore DB connections, we don’t support retries at the client level.)<br>org.apache.hadoop.hive.ql.metadata.HiveException: MetaException(message:For direct MetaStore DB connections, we don’t support retries at the client level.)</p>
+</blockquote>
+<p>原因：看着还像是元数据库的问题<br>解决：直接重启了hive</p>
+<h3 id="beeline连接失败"><a href="#beeline连接失败" class="headerlink" title="beeline连接失败"></a>beeline连接失败</h3><blockquote>
+<p>Error: Could not open client transport with JDBC Uri: jdbc:hive2://localhost:10000: java.net.ConnectException: 拒绝连接 (Connection refused) (state=08S01,code=0)</p>
+</blockquote>
+<p>原因: hiveserver2启动失败，没有查看日志以为启动成功了直接beeline连接</p>
+<h3 id="hiveserver2启动卡住"><a href="#hiveserver2启动卡住" class="headerlink" title="hiveserver2启动卡住"></a>hiveserver2启动卡住</h3><blockquote>
+<p>ls: cannot access /data/bigdata/spark-2.4.4-bin-hadoop2.6/lib/spark-assembly-*.jar: No such file or directory<br>SLF4J: Class path contains multiple SLF4J bindings.<br>SLF4J: Found binding in [jar:file:/data/bigdata/hbase-1.2.0-cdh5.8.3/lib/slf4j-log4j12-1.7.5.jar!/org/slf4j/impl/StaticLoggerBinder.class]<br>SLF4J: Found binding in [jar:file:/data/bigdata/hadoop-2.6.0-cdh5.8.3/share/hadoop/common/lib/slf4j-log4j12-1.7.5.jar!/org/slf4j/impl/StaticLoggerBinder.class]<br>SLF4J: See <a href="http://www.slf4j.org/codes.html#multiple_bindings" target="_blank" rel="noopener">http://www.slf4j.org/codes.html#multiple_bindings</a> for an explanation.<br>SLF4J: Actual binding is of type [org.slf4j.impl.Log4jLoggerFactory]</p>
+</blockquote>
+<p>查看hive.log分析具体问题</p>
+<h3 id="使用旧的元数据库时报错"><a href="#使用旧的元数据库时报错" class="headerlink" title="使用旧的元数据库时报错"></a>使用旧的元数据库时报错</h3><blockquote>
+<p>Cause:Table ‘metastore.VERSION’ doesn’t exis</p>
+</blockquote>
+<p>解决：<code>schematool -dbType mysql -initSchema</code></p>
+]]></content>
+      <categories>
+        <category>大数据</category>
+      </categories>
+      <tags>
+        <tag>Hive</tag>
+        <tag>Hadoop</tag>
+        <tag>CDH</tag>
+        <tag>环境搭建</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>搭建adoop2.6-CDH5.8.3集群</title>
+    <url>/2019/08/14/buid-hadoop-cdh/</url>
+    <content><![CDATA[<h2 id="在测试环境搭建Hadoop2-6-CDH5-8-3集群"><a href="#在测试环境搭建Hadoop2-6-CDH5-8-3集群" class="headerlink" title="在测试环境搭建Hadoop2.6-CDH5.8.3集群"></a>在测试环境搭建Hadoop2.6-CDH5.8.3集群</h2><h3 id="环境说明"><a href="#环境说明" class="headerlink" title="环境说明"></a>环境说明</h3><ul>
+<li>hadoop-2.6.0-cdh5.8.3</li>
+<li>MariaDB 10.3.10</li>
+<li>mysql-connector-java-8.0.17.jar</li>
+<li>三台CentOS 7.6服务器 sxlab26 27 28(26设为master)</li>
+</ul>
+<h3 id="搭建环境"><a href="#搭建环境" class="headerlink" title="搭建环境"></a>搭建环境</h3><p>对于搭建Hadoop-CDH一般有两种方式：</p>
+<ol>
+<li>通过Cloudera Manager进行搭建，这种搭建方式首先需要完成Cloudera Manager的解压和启动，之后通过浏览器访问CM Web页面进行集群部署。一般来说，生产环境采用这种方式部署，因为Cloudera Manager可以提供一个用于管理和观察集群状态的WebUI界面</li>
+<li>不依赖于Cloudera Manager，直接通过命令行下载并解压缩hadoop-2.6.0-cdh5.8.3.tar.gz文件进行Hadoop集群的搭建。这种方式一般用于测试环境，后续需要查看集群状态时需直接浏览集群运行日志。</li>
+</ol>
+<p><strong>由于我是搭建测试环境的Hadoop集群，对于集群健康状态的管理需求没有很高，故采用第二种方式进行集群搭建</strong></p>
+<h3 id="搭建准备"><a href="#搭建准备" class="headerlink" title="搭建准备"></a>搭建准备</h3><h4 id="安装jdk"><a href="#安装jdk" class="headerlink" title="安装jdk"></a>安装jdk</h4><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">wget jdk-8u45-linux-x64.gz</span><br><span class="line">tar -zxvf jdk-8u45-linux-x64.gz -C /data/bigdata</span><br><span class="line">mv jdk-8u45-linux-x64 ./jdk1.8.0_45</span><br><span class="line">sudo vim /etc/profile</span><br><span class="line"><span class="comment"># /etc/profile</span></span><br><span class="line">JAVA_HOME=/data/bigdata/jdk1.8.0_45/</span><br><span class="line">CLASSPATH=<span class="variable">$CLASSPATH</span>:<span class="variable">$JAVA_HOME</span>/lib:<span class="variable">$JAVA_HOME</span>/jre/lib:<span class="variable">$JAVA_HOME</span>/lib/tools.jar:<span class="variable">$JAVA_HOME</span>/lib/dt/jar</span><br><span class="line">PATH=<span class="variable">$PATH</span>:<span class="variable">$JAVA_HOME</span>/bin:<span class="variable">$JAVA_HOME</span>/jre/bin:<span class="variable">$CLASSPATH</span>:</span><br><span class="line"><span class="built_in">export</span> PATH JAVA_HOME CLASSPATH</span><br><span class="line"><span class="comment"># :wq</span></span><br><span class="line"><span class="built_in">source</span> /etc/profile</span><br></pre></td></tr></table></figure>
+
+<h4 id="集群网络配置"><a href="#集群网络配置" class="headerlink" title="集群网络配置"></a>集群网络配置</h4><h5 id="修改三台服务器hostname分别为sxlab26、sxlab27、sxlab28"><a href="#修改三台服务器hostname分别为sxlab26、sxlab27、sxlab28" class="headerlink" title="修改三台服务器hostname分别为sxlab26、sxlab27、sxlab28"></a>修改三台服务器hostname分别为sxlab26、sxlab27、sxlab28</h5><p> <code>vim /etc/hostname</code></p>
+<p> <code>sxlab26/7/8</code></p>
+<h5 id="添加IP和主机名映射"><a href="#添加IP和主机名映射" class="headerlink" title="添加IP和主机名映射"></a>添加IP和主机名映射</h5><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">vim /etc/hosts</span><br><span class="line"></span><br><span class="line">xx.xx.xxx.126 sxlab26</span><br><span class="line">xx.xx.xxx.127 sxlab27</span><br><span class="line">xx.xx.xxx.128 sxlab28</span><br></pre></td></tr></table></figure>
+<h5 id="配置集群ssh免密登录"><a href="#配置集群ssh免密登录" class="headerlink" title="配置集群ssh免密登录"></a>配置集群ssh免密登录</h5><ol>
+<li>每台机器上创建Bigdata用户并设置密码<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">useradd -m hadoop -G root -s /bin/bash</span><br><span class="line">passwd</span><br></pre></td></tr></table></figure></li>
+<li>分别在三台服务器上进行安装<figure class="highlight bash"><table><tr><td class="code"><pre><span class="line"><span class="comment"># 查看是否安装，如果出现openssh openssh-server openssh-clients表示已安装</span></span><br><span class="line">rpm -qa|grep -E <span class="string">"openssh"</span> <span class="comment">#或者 sudo service sshd status</span></span><br><span class="line"><span class="comment"># 安装</span></span><br><span class="line">sudo yum -y install openssh* <span class="comment">#或者 sudo yum -y install openssh openssh-server openssh-clients</span></span><br><span class="line"><span class="comment"># 注册使用服务</span></span><br><span class="line">sudo systemctl <span class="built_in">enable</span> sshd  </span><br><span class="line">sudo systemctl start sshd <span class="comment"># 或者service sshd start</span></span><br><span class="line"><span class="comment"># Hadoop集群需要关闭防火墙</span></span><br><span class="line"><span class="comment"># service iptables status </span></span><br><span class="line"><span class="comment"># service iptables stop</span></span><br><span class="line"><span class="comment"># 服务配置过滤</span></span><br><span class="line"><span class="comment"># chkconfig –list| grep iptables </span></span><br><span class="line"><span class="comment"># 关闭防火墙自动运行</span></span><br><span class="line"><span class="comment"># chkconfig iptables off</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 每台服务器都需要生成公钥，并把公钥传给其他两台服务器</span></span><br><span class="line">ssh-keygen -t rsa </span><br><span class="line"><span class="comment"># 公钥导入authorized_keys认证文件</span></span><br><span class="line">cat ~/.ssh/id_rsa.pub &gt;&gt; ~/.ssh/authorized_keys </span><br><span class="line"><span class="comment"># 分发公钥到其他服务器上</span></span><br><span class="line"><span class="comment"># 这里注意：使用scp方法的话 服务器重启之后再次连接可能需要密码，使用ssh-copy-id方法不需要</span></span><br><span class="line">scp authorized_keys bigdata@sxlab27:~/.ssh/</span><br><span class="line">scp authorized_keys bigdata@sxlab28:~/.ssh/</span><br><span class="line"><span class="comment"># ssh-copy-id -i ~/.ssh/id_rsa.pub sxlab26</span></span><br><span class="line"><span class="comment"># ssh-copy-id -i ~/.ssh/id_rsa.pub sxlab27</span></span><br><span class="line"><span class="comment"># ssh-copy-id -i ~/.ssh/id_rsa.pub sxlab28</span></span><br><span class="line"><span class="comment"># 最后三台服务器上的authorized_keys应该是同一个文件，该文件包含了三台机器的公钥</span></span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<h3 id="安装Hadoop"><a href="#安装Hadoop" class="headerlink" title="安装Hadoop"></a>安装Hadoop</h3><h4 id="配置Hadoop环境变量"><a href="#配置Hadoop环境变量" class="headerlink" title="配置Hadoop环境变量"></a>配置Hadoop环境变量</h4><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">vim /etc/profile</span><br><span class="line"><span class="comment"># /etc/profile</span></span><br><span class="line">HADOOP_HOME=/data/bigdata/hadoop-2.6.0-cdh5.8.3/</span><br><span class="line">CLASSPATH=<span class="variable">$CLASSPATH</span>:<span class="variable">$JAVA_HOME</span>/lib:<span class="variable">$JAVA_HOME</span>/jre/lib:<span class="variable">$JAVA_HOME</span>/lib/:<span class="variable">$HADOOP_HOME</span>/src/core</span><br><span class="line">HADOOP_PATH=<span class="variable">$HADOOP_HOME</span>/bin</span><br><span class="line">HADOOP_CLASSPATH=<span class="variable">$HADOOP_HOME</span>/build</span><br><span class="line">PATH=<span class="variable">$PATH</span>:<span class="variable">$JAVA_HOME</span>/bin:<span class="variable">$JAVA_HOME</span>/jre/bin:<span class="variable">$CLASSPATH</span>:<span class="variable">$HADOOP_PATH</span>:<span class="variable">$HADOOP_HOME</span>/bin:<span class="variable">$HADOOP_HOME</span>/src/core</span><br><span class="line"><span class="built_in">export</span> PATH JAVA_HOME CLASSPATH HADOOP_HOME HADOOP_PATH HADOOP_CLASSPATH</span><br><span class="line"><span class="comment"># :wq</span></span><br><span class="line"><span class="built_in">source</span> /etc/profile</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">vim /data/bigdata/hadoop-2.6.0-cdh5.8.3/etc/hadoop/hadoop-env.sh</span><br><span class="line"><span class="comment"># hadoop-env.sh</span></span><br><span class="line"><span class="built_in">export</span> JAVA_HOME=/data/bigdata/jdk1.8.0_45/</span><br></pre></td></tr></table></figure>
+
+<h4 id="修改Hadoop配置文件"><a href="#修改Hadoop配置文件" class="headerlink" title="修改Hadoop配置文件"></a>修改Hadoop配置文件</h4><h5 id="core-site-xml"><a href="#core-site-xml" class="headerlink" title="core-site.xml"></a>core-site.xml</h5><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">vim /data/bigdata/hadoop-2.6.0-cdh5.8.3/etc/hadoop/core-site.xml</span><br><span class="line"><span class="comment"># core-site.xml</span></span><br><span class="line"><span class="comment"># 使用fs.default.name 或者 fs.defaultFS取决于集群的NN是否为HA，是的话使用fs.defaultFS，不是的话使用fs.default.name</span></span><br><span class="line">&lt;configuration&gt;</span><br><span class="line">  &lt;property&gt;</span><br><span class="line">    &lt;name&gt;fs.default.name&lt;/name&gt;</span><br><span class="line">    &lt;value&gt;hdfs://xx.xx.xxx.126:9000&lt;/value&gt;</span><br><span class="line">  &lt;/property&gt;</span><br><span class="line">  &lt;property&gt;</span><br><span class="line">    &lt;name&gt;hadoop.tmp.dir&lt;/name&gt;</span><br><span class="line">    &lt;value&gt;/data/bigdata/hadoop-2.6.0-cdh5.8.3/hadoop_tmp/hadoop_<span class="variable">$&#123;user.name&#125;</span>&lt;/value&gt;</span><br><span class="line">  &lt;/property&gt;</span><br><span class="line">&lt;/configuration&gt;</span><br></pre></td></tr></table></figure>
+
+<h5 id="hdfs-site-xml"><a href="#hdfs-site-xml" class="headerlink" title="hdfs-site.xml"></a>hdfs-site.xml</h5><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">vim /data/bigdata/hadoop-2.6.0-cdh5.8.3/etc/hadoop/hdfs-site.xml</span><br><span class="line"><span class="comment"># hdfs-site.xml </span></span><br><span class="line">&lt;configuration&gt;</span><br><span class="line">  &lt;property&gt;</span><br><span class="line">    &lt;name&gt;dfs.replication&lt;/name&gt;</span><br><span class="line">    &lt;value&gt;2&lt;/value&gt;</span><br><span class="line">  &lt;/property&gt;</span><br><span class="line">  &lt;property&gt;</span><br><span class="line">　　&lt;name&gt;dfs.datanode.data.dir&lt;/name&gt;</span><br><span class="line">　　&lt;value&gt;默认为file://<span class="variable">$&#123;hadoop.tmp.dir&#125;</span>/dfs/name&lt;/value&gt;</span><br><span class="line">  &lt;/property&gt;</span><br><span class="line">&lt;/configuration&gt;</span><br></pre></td></tr></table></figure>
+
+<h5 id="yarn-site-xml"><a href="#yarn-site-xml" class="headerlink" title="yarn-site.xml"></a>yarn-site.xml</h5><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">vim /data/bigdata/hadoop-2.6.0-cdh5.8.3/etc/hadoop/yarn-site.xml</span><br><span class="line"><span class="comment"># yarn-site.xml</span></span><br><span class="line">&lt;configuration&gt;</span><br><span class="line">　&lt;property&gt;</span><br><span class="line">　　&lt;name&gt;yarn.nodemanager.aux-services&lt;/name&gt;</span><br><span class="line">　　&lt;value&gt;mapreduce_shuffle&lt;/value&gt;</span><br><span class="line">　&lt;/property&gt;</span><br><span class="line">  &lt;property&gt;</span><br><span class="line">　　&lt;name&gt;yarn.resourcemanager.hostname&lt;/name&gt;</span><br><span class="line">　　&lt;value&gt;master&lt;/value&gt;</span><br><span class="line">　&lt;/property&gt;</span><br><span class="line">&lt;/configuration&gt;</span><br></pre></td></tr></table></figure>
+
+<h5 id="mapred-site-xml"><a href="#mapred-site-xml" class="headerlink" title="mapred-site.xml"></a>mapred-site.xml</h5><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">vim /data/bigdata/hadoop-2.6.0-cdh5.8.3/etc/hadoop/mapred-site.xml</span><br><span class="line"><span class="comment"># mapred-site.xml</span></span><br><span class="line">&lt;configuration&gt;</span><br><span class="line">  &lt;property&gt;</span><br><span class="line">　  &lt;name&gt;mapreduce.framework.name&lt;/name&gt;</span><br><span class="line">    &lt;value&gt;yarn&lt;/value&gt;</span><br><span class="line">　&lt;/property&gt;</span><br><span class="line">  &lt;property&gt;</span><br><span class="line">    &lt;name&gt;mapred.job.tracker&lt;/name&gt;</span><br><span class="line">    &lt;value&gt;xx.xx.xxx.126:9001&lt;/value&gt;</span><br><span class="line">  &lt;/property&gt;</span><br><span class="line">&lt;/configuration&gt;</span><br></pre></td></tr></table></figure>
+
+<h5 id="设置datanode运行机器"><a href="#设置datanode运行机器" class="headerlink" title="设置datanode运行机器"></a>设置datanode运行机器</h5><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">vim /data/bigdata/hadoop-2.6.0-cdh5.8.3/etc/hadoop/slaves</span><br><span class="line"><span class="comment"># slaves</span></span><br><span class="line">xx.xx.xxx.126</span><br><span class="line">xx.xx.xxx.127</span><br><span class="line">xx.xx.xxx.128</span><br></pre></td></tr></table></figure>
+
+<h5 id="分发到其他两台机器"><a href="#分发到其他两台机器" class="headerlink" title="分发到其他两台机器"></a>分发到其他两台机器</h5><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">scp -r /data/bigdata/hadoop-2.6.0-cdh5.8.3 bigdata@sxlab27:/data/bigdata/</span><br><span class="line">scp -r /data/bigdata/hadoop-2.6.0-cdh5.8.3 bigdata@sxlab27:/data/bigdata/</span><br><span class="line">scp /etc/profile bigdata@sxlab27:/etc/</span><br><span class="line">scp /etc/profile bigdata@sxlab28:/etc/</span><br><span class="line"><span class="comment"># 在27 28两台机器上</span></span><br><span class="line"><span class="built_in">source</span> /etc/profile</span><br></pre></td></tr></table></figure>
+
+<h4 id="启动Hadoop集群"><a href="#启动Hadoop集群" class="headerlink" title="启动Hadoop集群"></a>启动Hadoop集群</h4><h5 id="初始化"><a href="#初始化" class="headerlink" title="初始化"></a>初始化</h5><p><code>$HADOOP_HOME/bin/hdfs namenode -format</code></p>
+<p>初始化后在${hadoop.tmp.dir}文件夹下会看到一个name文件夹</p>
+<h5 id="启动集群"><a href="#启动集群" class="headerlink" title="启动集群"></a>启动集群</h5><p><code>$HADOOP_HOME/bin/satrt-all.sh</code></p>
+<p>start-all = start-dfs.sh &amp;&amp; start-yarn.sh</p>
+<h5 id="验证是否启动成功"><a href="#验证是否启动成功" class="headerlink" title="验证是否启动成功"></a>验证是否启动成功</h5><ol>
+<li>通过<code>jps</code>查看进程数</li>
+<li>访问<a href="http://sxlab26:50070(hadoop)或者http://sxlab26:8088/cluster(yarn)" target="_blank" rel="noopener">http://sxlab26:50070(hadoop)或者http://sxlab26:8088/cluster(yarn)</a></li>
+</ol>
+]]></content>
+      <categories>
+        <category>大数据</category>
+      </categories>
+      <tags>
+        <tag>Hadoop</tag>
+        <tag>CDH</tag>
+        <tag>环境搭建</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Hadoop四个配置文件主要properties说明</title>
+    <url>/2019/08/12/hadoop-properties/</url>
+    <content><![CDATA[<h2 id="Hadoop四个配置文件主要property说明"><a href="#Hadoop四个配置文件主要property说明" class="headerlink" title="Hadoop四个配置文件主要property说明"></a>Hadoop四个配置文件主要property说明</h2><h3 id="core-site-xml"><a href="#core-site-xml" class="headerlink" title="core-site.xml"></a>core-site.xml</h3><table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Description</th>
+<th>Default Value</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>fs.defalutFS</td>
+<td>缺省的文件URI标识设定,HDFS路径(URI),使用Java API操作hdfs时需要conf.set该值</td>
+<td>NULL</td>
+</tr>
+<tr>
+<td>fs.defalut.name</td>
+<td>同上，不同之处在于集群的NN是否为HA，是的话使用fs.defaultFS，不是的话使用fs.default.name</td>
+<td>NULL</td>
+</tr>
+<tr>
+<td>hadoop.tmp.dir</td>
+<td>NameNode、DataNode、JournalNode等存放数据的公共目录，使用默认的值时服务器重启后，该路径下数据会情况，建议配置一个持久化路径</td>
+<td>/tmp/{$user}</td>
+</tr>
+<tr>
+<td>ha.zookeeper.quorum</td>
+<td>NameNode HA时，配置ZooKeeper节点，以逗号隔开。注意，数量一定是奇数，且不少于三个节点</td>
+<td>null</td>
+</tr>
+<tr>
+<td>hadoop.logfile.size</td>
+<td>每个日志文件的最大值，单位：bytes</td>
+<td>10000000 (10M)</td>
+</tr>
+<tr>
+<td>hadoop.logfile.count</td>
+<td>日志文件的最大数量</td>
+<td>10</td>
+</tr>
+<tr>
+<td>io.file.buffer.size</td>
+<td>流文件的缓冲区大小(K)</td>
+<td>4096</td>
+</tr>
+<tr>
+<td>hadoop.security.authorization</td>
+<td>HDFS用户访问权限,服务端认证</td>
+<td>false</td>
+</tr>
+<tr>
+<td>### hdfs-site.xml</td>
+<td></td>
+<td></td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Description</th>
+<th>Default Value</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>dfs.namenode.name.dir</td>
+<td>指定一个本地文件系统路径，决定NN在何处存放fsimage。可以通过逗号分隔指定多个路径，在Hadoop1.0时代这是一种为NN做高可用的方法，但目前有更完善的Journal Node解决方案，留默认值即可</td>
+<td>null</td>
+</tr>
+<tr>
+<td>dfs.replication</td>
+<td>DataNode存储block的副本数量(不大于datanode数量最好)</td>
+<td>3</td>
+</tr>
+<tr>
+<td>dfs.permissions</td>
+<td>文件操作时的权限检查标识,如果是 true，则打开权限系统。如果是 false，权限检查 就是关闭的，但是其他的行为没有改变。这个配置参数的改变并不改变文件或目录的模式、所有者和组等信息。不管权限模式是开还是关，chmod，chgrp 和 chown 总是 会检查权限。</td>
+<td>true</td>
+</tr>
+<tr>
+<td>dfs.permissions.enabled</td>
+<td>默认为true。如果为true，则启用HDFS的权限检查，否则不启用。在生产 环境，一定要启用，测试环境可以自行决定。</td>
+<td>true</td>
+</tr>
+<tr>
+<td>dfs.permissions.superusergroup</td>
+<td>默认supergroup，指定HDFS的超级用户组的组名，可按需设置。</td>
+<td>null</td>
+</tr>
+<tr>
+<td>dfs.datanode.data.dir</td>
+<td>指定DN存放块数据的本地盘路径，可以通过逗号分隔指定多个路径。在生产环境可能会在一个DN上挂多块盘，因此需要修改该值。默认file://${hadoop.tmp.dir}/dfs/data</td>
+<td>/dfs/data</td>
+</tr>
+<tr>
+<td>dfs.blocksize</td>
+<td>块大小。对大多数生产环境来说是一个比较稳妥的值。因为该值决定了MR的默认map数，也会影响NN消耗的内存量， 需要谨慎修改</td>
+<td>默认为134217728，即128MB</td>
+</tr>
+<tr>
+<td>dfs.namenode.handler.count</td>
+<td>NN处理rpc请求的线程数，默认为10，对大多数集群来说该值过小，设置该值的一般原则是将其设置为集群大小的自然对数乘以20，即20logN，N为集群大小。例如对100个节点的集群该值可以设到90</td>
+<td>看情况</td>
+</tr>
+<tr>
+<td>dfs.datanode.balance.bandwidthPerSec</td>
+<td>HDFS做均衡时使用的最大带宽</td>
+<td>1048576，即1MB/s</td>
+</tr>
+<tr>
+<td>dfs.hosts / dfs.hosts.exclude</td>
+<td>指定连接NN的主机的白/黑名单。通常黑名单比较有用，例如在对DN进行 更换硬盘操作时，可以先将其加入黑名单进行摘除，等运维操作结束后再放行</td>
+<td>null</td>
+</tr>
+<tr>
+<td>dfs.datanode.failed.volumes.tolerated</td>
+<td>DN多少块盘损坏后停止服务，即一旦任何磁盘故障DN即关闭,对盘较多的集群（例如每DN12块盘），磁盘故障是常态，通常可以将该值设置为1或2，避免频繁有DN下线</td>
+<td>默认为0</td>
+</tr>
+<tr>
+<td>dfs.ha.automatic-failover.enabled</td>
+<td>是否启用HDFS的自动故障转移，默认为false。像CDH等发行版，如果打开 HDFS HA后，该值会被自动更新为true，因此通常不需要自己改动</td>
+<td>false</td>
+</tr>
+<tr>
+<td>dfs.support.append</td>
+<td>是否启用HDFS的追加写入支持，默认为true。老版本Hadoop上append功能有bug，因此该值曾经默认为false，但现在已经可以放心使用true，有老集群升级上来的需要调整。</td>
+<td>true</td>
+</tr>
+<tr>
+<td>dfs.encrypt.data.transfer</td>
+<td>HDFS数据在网络上传输时是否加密。如果Hadoop集群运行 在非安全网络上，可以考虑开启该参数，但会带来一些CPU开销。通常 Hadoop都会在私有网络内部署，不需要动该值。</td>
+<td>false</td>
+</tr>
+<tr>
+<td>dfs.client.read.shortcircuit</td>
+<td>是否开启HDFS的短路本地读，默认为false。像CDH等发行版会默认将该参 数打开，并且如果在任何一种Hadoop上安装Impala，也需要打开该参数。 打开后，还需要设置dfs.domain.socket.path参数以指定一个Unix Socket文件的路径。</td>
+<td>false</td>
+</tr>
+<tr>
+<td>dfs.datanode.handler.count</td>
+<td>数据节点的服务器线程数。可适当增加这个数值来提升DataNode RPC服务的并发度。 在DataNode上设定,取决于系统的繁忙程度,设置太小会导致性能下降甚至报错。线程数的提高将增加DataNode的内存需求，因此，不宜过度调整这个数值。</td>
+<td>默认为10</td>
+</tr>
+<tr>
+<td>dfs.datanode.max.transfer.threads (dfs.datanode.max.xcievers）</td>
+<td>DataNode可以同时处理的数据传输连接数,即指定在DataNode内外传输数据使用的最大线程数。</td>
+<td>默认值为4096。推荐值为8192。</td>
+</tr>
+<tr>
+<td>dfs.namenode.avoid.read.stale.datanode</td>
+<td>指示是否避免读取“过时”的数据节点（DataNode），这些数据节点（DataNode）的心跳消息在指定的时间间隔内未被名称节点（NameNode）接收。过时的数据节点（DataNode）将移动到返回供读取的节点列表的末尾。有关写入的类似设置，请参阅df.namenode.avoint.write.stale.datanode。</td>
+<td>默认false，推荐true</td>
+</tr>
+<tr>
+<td>dfs.namenode.avoid.write.stale.datanode</td>
+<td>指示超过失效 DataNode 时间间隔 NameNode 未收到检测信号信息时是否避免写入失效 DataNode。写入应避免使用失效 DataNode，除非多个已配置比率 (dfs.namenode.write.stale.datanode.ratio) 的 DataNode 标记为失效。有关读取的类似设置，请参阅 dfs.namenode.avoid.read.stale.datanode。</td>
+<td>默认false，推荐true</td>
+</tr>
+<tr>
+<td>dfs.datanode.du.reserved</td>
+<td>当DataNode向NameNode汇报可用的硬盘大小的时候，它会把所有dfs.data.dir所列出的可用的硬盘大小总和发给NameNode。由于mapred.local.dir经常会跟DataNode共享可用的硬盘资源，因此我们需要为Mapreduce任务保留一些硬盘资源。dfs.datanode.du.reserved定义了每个dfs.data.dir所定义的硬盘空间需要保留的大小，以byte为单位。默认情况下，该值为0，也就是说HDFS可以使用每个数据硬盘的所有空间，节点硬盘资源耗尽时就会进入读模式。因此，建议每个硬盘都为map任务保留最少10GB的空间，如果每个Mapreduce作业都会产生大量的中间结果，或者每个硬盘空间都比较大（超过2TB），那么建议相应的增大保留的硬盘空间。我在生产环境中设置改值的大小为50G字节！</td>
+<td>0</td>
+</tr>
+<tr>
+<td>### yarn-site.xml</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Property</td>
+<td>Description</td>
+<td>Default Value</td>
+</tr>
+<tr>
+<td>———</td>
+<td>————</td>
+<td>—————</td>
+</tr>
+<tr>
+<td>yarn.nodemanager.aux-services</td>
+<td>NodeManager上运行的附属服务。需配置成mapreduce_shuffle，才可运行MapReduce程序</td>
+<td>mapreduce_shuffle</td>
+</tr>
+<tr>
+<td>yarn.resourcemanager.hostname</td>
+<td>指定RM运行的服务器</td>
+<td>master</td>
+</tr>
+<tr>
+<td>yarn.resourcemanager.address</td>
+<td>ResourceManager提供客户端访问的地址。客户端通过该地址向RM提交应用程序，杀死应用程序等</td>
+<td>0.0.0.0:8032</td>
+</tr>
+<tr>
+<td>yarn.resourcemanager.scheduler.address</td>
+<td>RM提供给ApplicationMaster的访问地址。ApplicationMaster同通过该地址向RM申请资源、释放资源等</td>
+<td>0.0.0.0:8030</td>
+</tr>
+<tr>
+<td>yarn.resoucemanager.resource.resource-tracker.address</td>
+<td>RM提供NodeManager的地址。NodeManager通过该地址向RM汇报心跳，领取任务等</td>
+<td>0.0.0.0:8031</td>
+</tr>
+<tr>
+<td>yarn.resourcemanager.admin.address</td>
+<td>RM提供管理员的访问地址。管理员通过该地址向RM发送管理命令等</td>
+<td>0.0.0.0:8033</td>
+</tr>
+<tr>
+<td>yarn.resourcemanager.webapp.address</td>
+<td>RM对web服务提供地址。用户可通过该地址在浏览器中查看集群各类信息</td>
+<td>0.0.0.0:8088</td>
+</tr>
+<tr>
+<td>### mapred-site.xml</td>
+<td></td>
+<td></td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Description</th>
+<th>Default Value</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>mapreduce.cluster.local.dir</td>
+<td>mapred做本地计算所使用的文件夹，可以配置多块硬盘，逗号分隔</td>
+<td>${hadoop.tmp.dir}/mapred/local</td>
+</tr>
+<tr>
+<td>mapreduce.jobtracker.system.dir</td>
+<td>mapred存放控制文件所使用的文件夹，可配置多块硬盘，逗号分隔。</td>
+<td>${hadoop.tmp.dir}/mapred/system</td>
+</tr>
+<tr>
+<td>mapreduce.jobtracker.staging.root.dir</td>
+<td>用来存放与每个job相关的数据</td>
+<td>${hadoop.tmp.dir}/mapred/staging</td>
+</tr>
+<tr>
+<td>mapreduce.jobtracker.jobhistory.location</td>
+<td>job历史文件保存路径，默认在logs的history文件夹下。</td>
+<td>null</td>
+</tr>
+<tr>
+<td>mapreduce.task.io.sort.factor</td>
+<td>排序文件时用于合并的流数量，即打开的文件句柄数</td>
+<td>10</td>
+</tr>
+<tr>
+<td>mapreduce.task.io.sort.mb</td>
+<td>排序文件时总的内存量（MB），默认每个合并流1MB</td>
+<td>100</td>
+</tr>
+<tr>
+<td>mapreduce.map.sort.spill.percent</td>
+<td>Map阶段溢写文件的阈值（排序缓冲区大小的百分比）</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>mapreduce.jobtracker.http.address</td>
+<td>jobtracker的tracker页面服务监听地址</td>
+<td>0.0.0.0:50030</td>
+</tr>
+<tr>
+<td>mapreduce.job.running.map.limit</td>
+<td>单个任务并发的最大map数，0或负数没有限制</td>
+<td>0</td>
+</tr>
+<tr>
+<td>mapreduce.job.running.reduce.limit</td>
+<td>单个任务并发的最大reduce数，0或负数没有限制</td>
+<td>0</td>
+</tr>
+<tr>
+<td>mapreduce.map.memory.mb</td>
+<td>每个Map Task需要的内存量</td>
+<td>1024</td>
+</tr>
+<tr>
+<td>mapreduce.map.cpu.vcores</td>
+<td>每个Map Task需要的虚拟CPU个数</td>
+<td>1</td>
+</tr>
+<tr>
+<td>mapreduce.reduce.memory.mb</td>
+<td>每个Reduce Task需要的内存量</td>
+<td>1024</td>
+</tr>
+<tr>
+<td>mapreduce.reduce.cpu.vcores</td>
+<td>每个Reduce Task需要的虚拟CPU个数</td>
+<td>1</td>
+</tr>
+<tr>
+<td>mapreduce.reduce.shuffle.merge.percent</td>
+<td>超过shuffle最大内存的一定限度后，开始往磁盘刷</td>
+<td>0.66</td>
+</tr>
+<tr>
+<td>mapreduce.reduce.shuffle.input.buffer.percent</td>
+<td>shuffile在reduce内存中的数据最多使用内存量</td>
+<td>0.70</td>
+</tr>
+<tr>
+<td>mapreduce.reduce.shuffle.memory.limit.percent</td>
+<td>每个fetch取到的输出的大小能够占的内存比的大小，所以，如果我们想fetch不进磁盘的话，可以适当调大这个值</td>
+<td>0.25</td>
+</tr>
+<tr>
+<td>mapreduce.map.output.compress</td>
+<td>map输出结果是否要压缩</td>
+<td>false</td>
+</tr>
+<tr>
+<td>mapreduce.reduce.shuffle.parallelcopies</td>
+<td>Reduce Task启动的并发拷贝数据的线程数目</td>
+<td>5</td>
+</tr>
+<tr>
+<td>mapreduce.jobhistory.address</td>
+<td>MapReduce JobHistory Server IPC地址</td>
+<td>0.0.0.0:10020</td>
+</tr>
+<tr>
+<td>mapreduce.jobhistory.webapp.address</td>
+<td>MapReduce JobHistory Server Web UI地址</td>
+<td>0.0.0.0:19888</td>
+</tr>
+<tr>
+<td>mapreduce.jobhistory.admin.address</td>
+<td>History Server的管理地址</td>
+<td>0.0.0.0:10033</td>
+</tr>
+<tr>
+<td>mapreduce.input.fileinputformat.split.minsize</td>
+<td>map任务输入数据块最小大小</td>
+<td>0</td>
+</tr>
+<tr>
+<td>yarn.app.mapreduce.am.command-opts</td>
+<td>MR App master的java选项</td>
+<td>-Xmx1024m</td>
+</tr>
+</tbody></table>
+]]></content>
+      <categories>
+        <category>大数据</category>
+      </categories>
+      <tags>
+        <tag>Hadoop</tag>
+        <tag>CDH</tag>
+        <tag>环境搭建</tag>
+        <tag>core-site</tag>
+        <tag>hdfs-site</tag>
+        <tag>yarn-site</tag>
+        <tag>mapred-site</tag>
+      </tags>
+  </entry>
+</search>

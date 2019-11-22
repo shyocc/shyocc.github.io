@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next pisces use-motion" lang="zh-Hans">
+<head>
+  <meta charset="UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta name="theme-color" content="#222">
+
+
+
+
+  
+  
+    
+    
+  <script src="/lib/pace/pace.min.js?v=1.0.2"></script>
+  <link href="/lib/pace/pace-theme-flash.min.css?v=1.0.2" rel="stylesheet">
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css" />
+
+
+
+
+  
+  
+  
+  
+
+  
+    
+    
+  
+
+  
+    
+      
+    
+
+    
+  
+
+  
+
+  
+    
+      
+    
+
+    
+  
+
+  
+    
+      
+    
+
+    
+  
+
+  
+    
+    
+    <link href="//fonts.googleapis.com/css?family=Lato:300,300italic,400,400italic,700,700italic|Roboto Slab:300,300italic,400,400italic,700,700italic|Appo paint:300,300italic,400,400italic,700,700italic|PT Mono:300,300italic,400,400italic,700,700italic&subset=latin,latin-ext" rel="stylesheet" type="text/css">
+  
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css" />
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css" />
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon.ico?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon.ico?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="Hive,Orc,Java,HDFS," />
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="ORCORC简介ORC文件是一种以二进制方式存储的，有多种压缩方式的，自解析的文件，所以ORC也是不可以直接读取，它包含许多的元数据，这些元数据都是同构ProtoBuffer进行序列化的 ORC文件结构 ORC是列式存储，有多种文件压缩方式，并且有着很高的压缩比。 一个ORC文件中可以包含多个stripe，每一个stripe包含多条记录，这些记录按照列进行独立存储，对应到Parquet中的row">
+<meta name="keywords" content="Hive,Orc,Java,HDFS">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Java 读写 HDFS上的ORC文件">
+<meta property="og:url" content="http:&#x2F;&#x2F;yoursite.com&#x2F;2019&#x2F;09&#x2F;02&#x2F;orcfile&#x2F;index.html">
+<meta property="og:site_name" content="Shyo&#39;s Blog">
+<meta property="og:description" content="ORCORC简介ORC文件是一种以二进制方式存储的，有多种压缩方式的，自解析的文件，所以ORC也是不可以直接读取，它包含许多的元数据，这些元数据都是同构ProtoBuffer进行序列化的 ORC文件结构 ORC是列式存储，有多种文件压缩方式，并且有着很高的压缩比。 一个ORC文件中可以包含多个stripe，每一个stripe包含多条记录，这些记录按照列进行独立存储，对应到Parquet中的row">
+<meta property="og:locale" content="zh-Hans">
+<meta property="og:image" content="https:&#x2F;&#x2F;images.gitee.com&#x2F;uploads&#x2F;images&#x2F;2019&#x2F;1122&#x2F;165657_703e601d_5042509.jpeg">
+<meta property="og:image" content="https:&#x2F;&#x2F;images.gitee.com&#x2F;uploads&#x2F;images&#x2F;2019&#x2F;1122&#x2F;165657_f4d584f1_5042509.png">
+<meta property="og:updated_time" content="2019-11-22T17:11:34.216Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https:&#x2F;&#x2F;images.gitee.com&#x2F;uploads&#x2F;images&#x2F;2019&#x2F;1122&#x2F;165657_703e601d_5042509.jpeg">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Pisces',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Shyo'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="http://yoursite.com/2019/09/02/orcfile/"/>
+
+
+
+
+
+  <title>Java 读写 HDFS上的ORC文件 | Shyo's Blog</title>
+  
+
+
+
+
+
+  <script type="text/javascript">
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "https://hm.baidu.com/hm.js?916af8d1ac6a727be47477691fc405a2";
+      var s = document.getElementsByTagName("script")[0];
+      s.parentNode.insertBefore(hm, s);
+    })();
+  </script>
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/"  class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">Shyo's Blog</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle">只是你迟到一千年 黄昏后就不会有夜</p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br />
+            
+            首页
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br />
+            
+            标签
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-categories">
+          <a href="/categories/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-th"></i> <br />
+            
+            分类
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br />
+            
+            归档
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2019/09/02/orcfile/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="Shyo">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/uploads/avatar.jpeg">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Shyo's Blog">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">Java 读写 HDFS上的ORC文件</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2019-09-02T01:05:55+08:00">
+                2019-09-02
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">分类于</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E5%A4%A7%E6%95%B0%E6%8D%AE/" itemprop="url" rel="index">
+                    <span itemprop="name">大数据</span>
+                  </a>
+                </span>
+
+                
+                
+                  ， 
+                
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E5%A4%A7%E6%95%B0%E6%8D%AE/Java/" itemprop="url" rel="index">
+                    <span itemprop="name">Java</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+              <span class="post-comments-count">
+                <span class="post-meta-divider">|</span>
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-comment-o"></i>
+                </span>
+                <a href="/2019/09/02/orcfile/#comments" itemprop="discussionUrl">
+                  <span class="post-comments-count valine-comment-count" data-xid="/2019/09/02/orcfile/" itemprop="commentCount"></span>
+                </a>
+              </span>
+            
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h2 id="ORC"><a href="#ORC" class="headerlink" title="ORC"></a>ORC</h2><h3 id="ORC简介"><a href="#ORC简介" class="headerlink" title="ORC简介"></a>ORC简介</h3><p>ORC文件是一种以二进制方式存储的，有多种压缩方式的，自解析的文件，所以ORC也是不可以直接读取，它包含许多的元数据，这些元数据都是同构ProtoBuffer进行序列化的</p>
+<h3 id="ORC文件结构"><a href="#ORC文件结构" class="headerlink" title="ORC文件结构"></a>ORC文件结构</h3><ul>
+<li>ORC是列式存储，有多种文件压缩方式，并且有着很高的压缩比。</li>
+<li>一个ORC文件中可以包含多个stripe，每一个stripe包含多条记录，这些记录按照列进行独立存储，对应到Parquet中的row group的概念</li>
+<li>文件是可切分（Split）的。因此，在Hive中使用ORC作为表的文件存储格式，不仅节省HDFS存储资源，查询任务的输入数据量减少，使用的MapTask也就减少了。</li>
+<li>提供了多种索引，row group index、bloom filter index。</li>
+<li>ORC可以支持复杂的数据结构（比如Map等）</li>
+<li>在ORC文件中保存了三个层级的统计信息，分别为文件级别、stripe级别和row group级别的，他们都可以用来根据Search ARGuments（谓词下推条件）判断是否可以跳过某些数据，在统计信息中都包含成员数和是否有null值，并且对于不同类型的数据设置一些特定的统计信息</li>
+</ul>
+<p><img src="https://images.gitee.com/uploads/images/2019/1122/165657_703e601d_5042509.jpeg" alt="orcwenjianzucheng"></p>
+<h4 id="名词解释"><a href="#名词解释" class="headerlink" title="名词解释"></a>名词解释</h4><ul>
+<li>stripe：一组行形成一个stripe，每次读取文件是以行组为单位的，一般为HDFS的块大小，保存了每一列的索引和数据</li>
+<li>stripe元数据：保存stripe的位置、每一个列的在该stripe的统计信息以及所有的stream类型和位置</li>
+<li>row group：索引的最小单位，一个stripe中包含多个row group，默认为10000个值组成</li>
+<li>stream：一个stream表示文件中一段有效的数据，包括索引和数据两类。索引stream保存每一个row group的位置和统计信息，数据stream包括多种类型的数据，具体需要哪几种是由该列类型和编码方式决定<h4 id="列式存储"><a href="#列式存储" class="headerlink" title="列式存储"></a>列式存储</h4>ORC文件相对于关系数据库中通常使用的行式存储，在使用列式存储时每一列的所有元素都是顺序存储的。<br><img src="https://images.gitee.com/uploads/images/2019/1122/165657_f4d584f1_5042509.png" alt="lieshicunchu"></li>
+</ul>
+<p>主要有以下特点：</p>
+<ul>
+<li>每一列的成员都是同构的，可以针对不同的数据类型使用更高效的数据压缩算法，进一步减小I/O</li>
+<li>由于每一列的成员的同构性，可以使用更加适合CPU pipeline的编码方式，减小CPU的缓存失效</li>
+<li>查询的时候不需要扫描全部的数据，而只需要读取每次查询涉及的列，这样可以将I/O消耗降低N倍，另外可以保存每一列的统计信息(min、max、sum等)，实现部分的谓词下推</li>
+<li>ORC在读写时候需要消耗额外的CPU资源来压缩和解压缩，当然这部分的CPU消耗是非常少的</li>
+</ul>
+<h3 id="Java代码"><a href="#Java代码" class="headerlink" title="Java代码"></a>Java代码</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br><span class="line">212</span><br><span class="line">213</span><br><span class="line">214</span><br><span class="line">215</span><br><span class="line">216</span><br><span class="line">217</span><br><span class="line">218</span><br><span class="line">219</span><br><span class="line">220</span><br><span class="line">221</span><br><span class="line">222</span><br><span class="line">223</span><br><span class="line">224</span><br><span class="line">225</span><br><span class="line">226</span><br><span class="line">227</span><br><span class="line">228</span><br><span class="line">229</span><br><span class="line">230</span><br><span class="line">231</span><br><span class="line">232</span><br><span class="line">233</span><br><span class="line">234</span><br><span class="line">235</span><br><span class="line">236</span><br><span class="line">237</span><br><span class="line">238</span><br><span class="line">239</span><br><span class="line">240</span><br><span class="line">241</span><br><span class="line">242</span><br><span class="line">243</span><br><span class="line">244</span><br><span class="line">245</span><br><span class="line">246</span><br><span class="line">247</span><br><span class="line">248</span><br><span class="line">249</span><br><span class="line">250</span><br><span class="line">251</span><br><span class="line">252</span><br><span class="line">253</span><br><span class="line">254</span><br><span class="line">255</span><br><span class="line">256</span><br><span class="line">257</span><br><span class="line">258</span><br><span class="line">259</span><br><span class="line">260</span><br><span class="line">261</span><br><span class="line">262</span><br><span class="line">263</span><br><span class="line">264</span><br><span class="line">265</span><br><span class="line">266</span><br><span class="line">267</span><br><span class="line">268</span><br><span class="line">269</span><br><span class="line">270</span><br><span class="line">271</span><br><span class="line">272</span><br><span class="line">273</span><br><span class="line">274</span><br><span class="line">275</span><br><span class="line">276</span><br><span class="line">277</span><br><span class="line">278</span><br><span class="line">279</span><br><span class="line">280</span><br><span class="line">281</span><br><span class="line">282</span><br><span class="line">283</span><br><span class="line">284</span><br><span class="line">285</span><br><span class="line">286</span><br><span class="line">287</span><br><span class="line">288</span><br><span class="line">289</span><br><span class="line">290</span><br><span class="line">291</span><br><span class="line">292</span><br><span class="line">293</span><br><span class="line">294</span><br><span class="line">295</span><br><span class="line">296</span><br><span class="line">297</span><br><span class="line">298</span><br><span class="line">299</span><br><span class="line">300</span><br><span class="line">301</span><br><span class="line">302</span><br><span class="line">303</span><br><span class="line">304</span><br><span class="line">305</span><br><span class="line">306</span><br><span class="line">307</span><br><span class="line">308</span><br><span class="line">309</span><br><span class="line">310</span><br><span class="line">311</span><br><span class="line">312</span><br><span class="line">313</span><br><span class="line">314</span><br><span class="line">315</span><br><span class="line">316</span><br><span class="line">317</span><br><span class="line">318</span><br><span class="line">319</span><br><span class="line">320</span><br><span class="line">321</span><br><span class="line">322</span><br><span class="line">323</span><br><span class="line">324</span><br><span class="line">325</span><br><span class="line">326</span><br><span class="line">327</span><br><span class="line">328</span><br><span class="line">329</span><br><span class="line">330</span><br><span class="line">331</span><br><span class="line">332</span><br><span class="line">333</span><br><span class="line">334</span><br><span class="line">335</span><br><span class="line">336</span><br><span class="line">337</span><br><span class="line">338</span><br><span class="line">339</span><br><span class="line">340</span><br><span class="line">341</span><br><span class="line">342</span><br><span class="line">343</span><br><span class="line">344</span><br><span class="line">345</span><br><span class="line">346</span><br><span class="line">347</span><br><span class="line">348</span><br><span class="line">349</span><br><span class="line">350</span><br><span class="line">351</span><br><span class="line">352</span><br><span class="line">353</span><br><span class="line">354</span><br><span class="line">355</span><br><span class="line">356</span><br><span class="line">357</span><br><span class="line">358</span><br><span class="line">359</span><br><span class="line">360</span><br><span class="line">361</span><br><span class="line">362</span><br><span class="line">363</span><br><span class="line">364</span><br><span class="line">365</span><br><span class="line">366</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// OrcFileSystem</span></span><br><span class="line"><span class="keyword">import</span> org.apache.commons.io.FileUtils;</span><br><span class="line"><span class="keyword">import</span> org.apache.commons.lang.StringUtils;</span><br><span class="line"><span class="keyword">import</span> org.apache.hadoop.conf.Configuration;</span><br><span class="line"><span class="keyword">import</span> org.apache.hadoop.fs.*;</span><br><span class="line"><span class="keyword">import</span> org.apache.hadoop.hive.ql.exec.vector.BytesColumnVector;</span><br><span class="line"><span class="keyword">import</span> org.apache.hadoop.hive.ql.exec.vector.ColumnVector;</span><br><span class="line"><span class="keyword">import</span> org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;</span><br><span class="line"><span class="keyword">import</span> org.apache.log4j.Logger;</span><br><span class="line"><span class="keyword">import</span> org.apache.orc.*;</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> java.io.File;</span><br><span class="line"><span class="keyword">import</span> java.io.IOException;</span><br><span class="line"><span class="keyword">import</span> java.net.URI;</span><br><span class="line"><span class="keyword">import</span> java.net.URISyntaxException;</span><br><span class="line"><span class="keyword">import</span> java.util.ArrayList;</span><br><span class="line"><span class="keyword">import</span> java.util.List;</span><br><span class="line"><span class="keyword">import</span> java.util.Map;</span><br><span class="line"><span class="keyword">import</span> java.util.regex.Matcher;</span><br><span class="line"><span class="keyword">import</span> java.util.regex.Pattern;</span><br><span class="line"></span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * Author: Shyo</span></span><br><span class="line"><span class="comment"> * Blog: shyocc.github.io</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">OrcFileSystem</span> </span>&#123;</span><br><span class="line">    <span class="comment">//private static Logger log = Logger.getLogger(OrcFileSystem.class);</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * orc文件读写的conf参数：</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * 参数名                           默认值                  说明</span></span><br><span class="line"><span class="comment">     * hive.exec.orc.default.stripe.size   256 * 1024 * 1024    stripe的默认大小</span></span><br><span class="line"><span class="comment">     * hive.exec.orc.default.block.size   256 * 1024 * 1024    orc文件在文件系统中的默认block大小，从hive-0.14开始</span></span><br><span class="line"><span class="comment">     * hive.exec.orc.dictionary.key.size.threshold  0.8         String类型字段使用字典编码的阈值</span></span><br><span class="line"><span class="comment">     * hive.exec.orc.default.row.index.stride    10000        stripe中的分组大小</span></span><br><span class="line"><span class="comment">     * hive.exec.orc.default.compress        ZLIB      ORC文件的默认压缩方式</span></span><br><span class="line"><span class="comment">     * hive.exec.orc.skip.corrupt.data        false       遇到错误数据的处理方式，false直接抛出异常，true则跳过该记录</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> Configuration conf = <span class="keyword">new</span> Configuration();</span><br><span class="line">    <span class="keyword">private</span> FileSystem fs;</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> String fileSeparator = System.getProperty(<span class="string">"file.separator"</span>);</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="title">OrcFileSystem</span><span class="params">(String fsDefaultFSURI)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            <span class="keyword">this</span>.fs = FileSystem.get(<span class="keyword">new</span> URI(fsDefaultFSURI), <span class="keyword">this</span>.conf);</span><br><span class="line">        &#125; <span class="keyword">catch</span> (Exception e) &#123;</span><br><span class="line">            e.printStackTrace();</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="title">OrcFileSystem</span><span class="params">(URI fsDefaultFSURI)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            <span class="keyword">this</span>.fs = FileSystem.get(fsDefaultFSURI, <span class="keyword">this</span>.conf);</span><br><span class="line">        &#125; <span class="keyword">catch</span> (Exception e) &#123;</span><br><span class="line">            e.printStackTrace();</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="title">OrcFileSystem</span><span class="params">(FileSystem fs)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">this</span>.fs = fs;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * Map&lt;String,String&gt; confs</span></span><br><span class="line"><span class="comment">     * 	"fs.defaultFS": "hdfs://nameservice1",</span></span><br><span class="line"><span class="comment">     * 	"dfs.nameservices": "nameservice1",</span></span><br><span class="line"><span class="comment">     * 	"dfs.client.failover.proxy.provider.nameservice1": "org.apache.hadoop.hdfs.server.namenode.ha.ConfiguredFailoverProxyProvider",</span></span><br><span class="line"><span class="comment">     * 	"dfs.ha.namenodes.nameservice1": "namenode230,namenode267",</span></span><br><span class="line"><span class="comment">     * 	"dfs.namenode.rpc-address.nameservice1.namenode230": "e11ecmrhdp01.mercury.corp:8020",</span></span><br><span class="line"><span class="comment">     * 	"dfs.namenode.rpc-address.nameservice1.namenode267": "e11ecmrhdp02.mercury.corp:8020",</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> confs</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="title">OrcFileSystem</span><span class="params">(Map&lt;String,String&gt; confs)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">this</span>.conf = <span class="keyword">new</span> Configuration();</span><br><span class="line">        confs.forEach((name,value) -&gt; &#123;</span><br><span class="line">            conf.set(name,value);</span><br><span class="line">        &#125;);</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            <span class="keyword">this</span>.fs = FileSystem.newInstance(conf);</span><br><span class="line">        &#125; <span class="keyword">catch</span> (IOException e) &#123;</span><br><span class="line">            e.printStackTrace();</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">list</span><span class="params">(Path hdfsPath)</span> <span class="keyword">throws</span> IOException </span>&#123;</span><br><span class="line">        <span class="keyword">if</span> (!fs.exists(hdfsPath)) &#123;</span><br><span class="line">            <span class="comment">//log.error("该路径不存在！");</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (!fs.getFileStatus(hdfsPath).isDirectory()) &#123;</span><br><span class="line">            <span class="comment">//log.error("该路径不是一个DIR！");</span></span><br><span class="line">        &#125;</span><br><span class="line">        FileStatus[] files = fs.listStatus(hdfsPath);</span><br><span class="line">        <span class="keyword">for</span> (FileStatus file : files) &#123;</span><br><span class="line">            System.out.println((file.isDirectory() ? <span class="string">"Dir  - "</span> : <span class="string">"File - "</span>) + file.getPath().toString());</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">listAll</span><span class="params">(Path hdfsPath)</span> <span class="keyword">throws</span> IOException </span>&#123;</span><br><span class="line">        <span class="keyword">if</span> (!fs.exists(hdfsPath)) &#123;</span><br><span class="line">            <span class="comment">//log.error("该路径不存在！");</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (!fs.getFileStatus(hdfsPath).isDirectory()) &#123;</span><br><span class="line">            <span class="comment">//log.error("该路径不是一个DIR！");</span></span><br><span class="line">        &#125;</span><br><span class="line">        FileStatus[] files = fs.listStatus(hdfsPath);</span><br><span class="line">        <span class="keyword">for</span> (FileStatus file : files) &#123;</span><br><span class="line">            <span class="keyword">if</span> (file.isDirectory()) &#123;</span><br><span class="line">                listAll(file.getPath());</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                System.out.println(file.getPath().toString());</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * 利用RemoteIterator和FS的listFiles方法打印出所有的文件路径</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> hdfsPath</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@throws</span> IOException</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">listAllAuto</span><span class="params">(Path hdfsPath)</span> <span class="keyword">throws</span> IOException </span>&#123;</span><br><span class="line">        <span class="keyword">if</span> (!fs.exists(hdfsPath)) &#123;</span><br><span class="line">            <span class="comment">//log.error("该路径不存在！");</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (!fs.getFileStatus(hdfsPath).isDirectory()) &#123;</span><br><span class="line">            <span class="comment">//log.error("该路径不是一个DIR！");</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">//获取RemoteIterator 得到所有的文件，第一个参数指定遍历的路径，第二个参数表示是否要递归遍历</span></span><br><span class="line">        RemoteIterator&lt;LocatedFileStatus&gt; files = fs.listFiles(hdfsPath,<span class="keyword">true</span>);</span><br><span class="line">        <span class="keyword">while</span> (files.hasNext()) &#123;</span><br><span class="line">            LocatedFileStatus file = files.next();</span><br><span class="line">            System.out.println(file.getPath().toString());</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * hdfsPath要使用完整uri，比如</span></span><br><span class="line"><span class="comment">     * hdfs://ip:port/user/hive/warehouse/datafeed.db/user/city=xian/000000_0</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> hdfsPath</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> localPath</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@throws</span> Exception</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">read</span><span class="params">(Path hdfsPath, String localPath, String split)</span> <span class="keyword">throws</span> Exception</span>&#123;</span><br><span class="line">        List&lt;String&gt; allRowStr = <span class="keyword">new</span> ArrayList&lt;&gt;();</span><br><span class="line">        <span class="keyword">if</span> (!fs.exists(hdfsPath)) &#123;</span><br><span class="line">            System.out.println(<span class="string">"orc file does not exists"</span>);</span><br><span class="line">            <span class="keyword">return</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (fs.isDirectory(hdfsPath)) &#123;</span><br><span class="line">            System.out.println(<span class="string">"the path is a dir, please use readDir func"</span>);</span><br><span class="line">            <span class="keyword">return</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (StringUtils.isBlank(localPath)) &#123;</span><br><span class="line">            localPath = System.getProperty(<span class="string">"user.dir"</span>) + fileSeparator + <span class="string">"data"</span> + fileSeparator + <span class="string">"tmp.txt"</span>;</span><br><span class="line">            System.out.println(<span class="string">"localPath changed because it is null - "</span> + localPath);</span><br><span class="line">        &#125;</span><br><span class="line">        File localFile = <span class="keyword">new</span> File(localPath);</span><br><span class="line">        <span class="keyword">if</span> (!localFile.exists()) &#123;</span><br><span class="line">            FileUtils.touch(localFile);</span><br><span class="line">        &#125;</span><br><span class="line">        Configuration readConf = <span class="keyword">this</span>.conf;</span><br><span class="line">        Reader reader = OrcFile.createReader(hdfsPath,OrcFile.readerOptions(<span class="keyword">this</span>.conf));</span><br><span class="line">        RecordReader rows = reader.rows();</span><br><span class="line">        <span class="comment">// createRowBatch可以设置读取数据的量，不设置的话默认是全部，那么下面的while循环只会循环一次</span></span><br><span class="line">        <span class="comment">// 假设设置maxSize = 1000，那么会有totla/1000个batch</span></span><br><span class="line">        VectorizedRowBatch batch = reader.getSchema().createRowBatch();</span><br><span class="line">        <span class="comment">// schema是orc的列，用hive表来说就是字段,</span></span><br><span class="line">        System.out.println(<span class="string">"schema: "</span> + reader.getSchema());</span><br><span class="line">        <span class="comment">// numCols是orc文件的列数,projectionSize = 3 = numCols,这两个属性不知道有什么区别</span></span><br><span class="line">        System.out.println(<span class="string">"cols: "</span> + batch.numCols + <span class="string">", projectSize: "</span> + batch.projectionSize);</span><br><span class="line">        <span class="comment">// batch.projectedColumns是一个int数组，projectedColumns[0,1,2] = 0,1,2，我也不知道有什么意义</span></span><br><span class="line">        <span class="comment">//for (int i = 0;i&lt;batch.projectedColumns.length;i++) &#123;</span></span><br><span class="line">            <span class="comment">//System.out.println("projectColums: " + i + "," + batch.projectedColumns[i]);</span></span><br><span class="line">        <span class="comment">//&#125;</span></span><br><span class="line">        <span class="comment">/**</span></span><br><span class="line"><span class="comment">         * 循环流程：</span></span><br><span class="line"><span class="comment">         * 1. batch的循环</span></span><br><span class="line"><span class="comment">         * 2. row的循环</span></span><br><span class="line"><span class="comment">         * 3. 每个row中col的循环（先循环col，再用row直接定位到行）</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        <span class="comment">// rows.nextBatch(batch) 一开始batch是没有数据的，需要nextBatch方法才会有数据</span></span><br><span class="line">        <span class="keyword">while</span> (rows.nextBatch(batch)) &#123;</span><br><span class="line">            <span class="comment">// row表示该batch数据集的第row行</span></span><br><span class="line">            <span class="keyword">for</span> (<span class="keyword">int</span> row = <span class="number">0</span>; row &lt; batch.size; row ++) &#123;</span><br><span class="line">                <span class="comment">// cols</span></span><br><span class="line">                allRowStr.add(String.join(split,rowToString(batch,row)));</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// false表示不是append</span></span><br><span class="line">        FileUtils.writeLines(localFile,allRowStr,<span class="keyword">false</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> batch</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> row</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span> 一行数据，按列存储成一个list</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="function"><span class="keyword">private</span> List&lt;String&gt; <span class="title">rowToString</span><span class="params">(VectorizedRowBatch batch, <span class="keyword">int</span> row)</span> </span>&#123;</span><br><span class="line">        List&lt;String&gt; colsValue = <span class="keyword">new</span> ArrayList&lt;&gt;();</span><br><span class="line">        <span class="comment">// 按列数循环，有多少列循环多少次</span></span><br><span class="line">        <span class="keyword">for</span> (<span class="keyword">int</span> i = <span class="number">0</span>;i &lt; batch.projectionSize; i++) &#123;</span><br><span class="line">            <span class="comment">// 定位到第i列</span></span><br><span class="line">            ColumnVector cv = batch.cols[i];</span><br><span class="line">            <span class="keyword">if</span> (cv != <span class="keyword">null</span>) &#123;</span><br><span class="line">                StringBuilder sb = <span class="keyword">new</span> StringBuilder();</span><br><span class="line">                <span class="keyword">try</span> &#123;</span><br><span class="line">                    <span class="keyword">if</span> (cv.noNulls || cv.isNull[row]) &#123;</span><br><span class="line">                        <span class="comment">// 把第row行第i列的值转换成StringBuilder</span></span><br><span class="line">                        <span class="comment">// 注意：这里是用append的方法赋值给StringBuilder</span></span><br><span class="line">                        cv.stringifyValue(sb,row);</span><br><span class="line">                    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                        <span class="comment">// null to ""</span></span><br><span class="line">                        sb.append(<span class="string">""</span>);</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125; <span class="keyword">catch</span> (Exception e) &#123;</span><br><span class="line">                    sb.append(<span class="string">""</span>);</span><br><span class="line">                &#125;</span><br><span class="line">                colsValue.add(trimAndReplace(sb.toString()));</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                colsValue.add(<span class="string">""</span>);</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> colsValue;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// cv.stringifyValue(sb,row);得到的字段是"xxx"格式的，应该去掉""</span></span><br><span class="line">    <span class="function"><span class="keyword">private</span> String <span class="title">trimAndReplace</span><span class="params">(String s)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">if</span> (s == <span class="keyword">null</span> || s.trim().length() == <span class="number">0</span>) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="string">""</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (s.startsWith(<span class="string">"\""</span>)) &#123;</span><br><span class="line">            s = s.substring(<span class="number">1</span>);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (s.endsWith(<span class="string">"\""</span>)) &#123;</span><br><span class="line">            s = s.substring(<span class="number">0</span>, s.length() - <span class="number">1</span>);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> s.replaceAll(<span class="string">"[\\\r\\\n]+"</span>, <span class="string">" "</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 如果f是一个文件或空目录，那么recursive的值就会被忽略。只有在recrusive值为true时，非空目录及其内容才会被删除（否则会抛出IOException异常）</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">boolean</span> <span class="title">delete</span><span class="params">(String hdfsPath, <span class="keyword">boolean</span> recursive)</span> </span>&#123;</span><br><span class="line">        Path path = <span class="keyword">new</span> Path(hdfsPath);</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            <span class="keyword">if</span> (!fs.exists(path)) &#123;</span><br><span class="line">                System.out.println(<span class="string">"文件不存在!"</span>);</span><br><span class="line">                <span class="keyword">return</span> <span class="keyword">false</span>;</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                fs.delete(path,recursive);</span><br><span class="line">                <span class="keyword">return</span> <span class="keyword">true</span>;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125; <span class="keyword">catch</span> (IOException e) &#123;</span><br><span class="line">            e.printStackTrace();</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">false</span>;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/**</span></span><br><span class="line"><span class="comment">     * write涉及schema的创建和batch中col的初始化，这些比较难找到通用的方法，所以对于不同的orc文件，基本上都要重新写一个对应的函数，没有通用的。</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * 写文件时居然不用设置分隔符，很奇怪，不知道是因为默认的没问题还是writer可以自己读取分隔符</span></span><br><span class="line"><span class="comment">     * 用本地文件路径测试的时候发现OrcFile.createWriter报错，可能写不了本地的orc文件</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> filePath</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> conf</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@param</span> schemaStr</span></span><br><span class="line"><span class="comment">     * <span class="doctag">@return</span></span></span><br><span class="line"><span class="comment">     * <span class="doctag">@throws</span> IOException</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">int</span> <span class="title">write</span><span class="params">(String filePath, Configuration conf, String schemaStr, <span class="keyword">boolean</span> append)</span> <span class="keyword">throws</span> IOException</span>&#123;</span><br><span class="line">        <span class="keyword">int</span> total = <span class="number">0</span>;</span><br><span class="line">        Pattern p = Pattern.compile(<span class="string">"struct&lt;(.*)&gt;"</span>);</span><br><span class="line">        Matcher m = p.matcher(schemaStr);</span><br><span class="line">        String schemaColumns = <span class="string">""</span>;</span><br><span class="line">        <span class="keyword">if</span> (m.find()) &#123;</span><br><span class="line">            schemaColumns = m.group(<span class="number">1</span>);</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            System.out.println(<span class="string">"schema struct error, please check: "</span> + schemaStr);</span><br><span class="line">            <span class="keyword">return</span> -<span class="number">1</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> (conf == <span class="keyword">null</span>) &#123;</span><br><span class="line">            conf = <span class="keyword">this</span>.conf;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 使用fromString方法初始化一个schema</span></span><br><span class="line">        <span class="comment">// 还可以用TypeDescription.createStruct().addField("field-name", TypeDescription.createString()).addfield()....的方法创建</span></span><br><span class="line">        TypeDescription schema = TypeDescription.fromString(schemaStr);</span><br><span class="line">        Path path = <span class="keyword">new</span> Path(filePath);</span><br><span class="line">        <span class="comment">// 不支持append，即如果filepath已经存在，无法写入,需要删除</span></span><br><span class="line">        <span class="comment">// 在hive上实现append只需要在hive表的目录下再创建一个文件，所以无影响</span></span><br><span class="line">        <span class="keyword">if</span> (fs.exists(path)) &#123;</span><br><span class="line">            <span class="comment">// 如果选择append的话，重建一个文件</span></span><br><span class="line">            <span class="keyword">if</span> (append) &#123;</span><br><span class="line">                path = <span class="keyword">new</span> Path(filePath + <span class="string">"_0"</span>);</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                delete(filePath,<span class="keyword">false</span>);</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        Writer writer = OrcFile.createWriter(path, OrcFile.writerOptions(conf).setSchema(schema));</span><br><span class="line">        <span class="comment">// 真正存数据的地方</span></span><br><span class="line">        VectorizedRowBatch batch = schema.createRowBatch();</span><br><span class="line">        <span class="comment">/**</span></span><br><span class="line"><span class="comment">         * BytesColumnVector -&gt; string -&gt; TypeDescription.createString()</span></span><br><span class="line"><span class="comment">         * LongColumnVector -&gt; int,long,boolean(1,0),date -&gt; TypeDescription.createInt(),TypeDescription.createLong(),TypeDescription.createBoolean(),TypeDescription.createDate()</span></span><br><span class="line"><span class="comment">         * DoubleColumnVector -&gt; double,float -&gt; TypeDescription.createDouble(),TypeDescription.createFloat()</span></span><br><span class="line"><span class="comment">         * TimestampColumnVector -&gt; timestamp -&gt; TypeDescription.createTimestamp()</span></span><br><span class="line"><span class="comment">         *</span></span><br><span class="line"><span class="comment">         * 特殊：map&lt;type1,type2&gt;</span></span><br><span class="line"><span class="comment">         *     // 定义map列，对key和value要做cast</span></span><br><span class="line"><span class="comment">         *     MapColumnVector map = (MapColumnVector) batch.cols[2];</span></span><br><span class="line"><span class="comment">         *     BytesColumnVector mapKey = (BytesColumnVector) map.keys;</span></span><br><span class="line"><span class="comment">         *     LongColumnVector mapValue = (LongColumnVector) map.values;</span></span><br><span class="line"><span class="comment">         *     // 每个map包含5个元素</span></span><br><span class="line"><span class="comment">         *     final int MAP_SIZE = 5;</span></span><br><span class="line"><span class="comment">         * 	   final int BATCH_SIZE = batch.getMaxSize();</span></span><br><span class="line"><span class="comment">         * 	   // 确保map的空间充足</span></span><br><span class="line"><span class="comment">         * 	   mapKey.ensureSize(BATCH_SIZE * MAP_SIZE, false);</span></span><br><span class="line"><span class="comment">         * 	   mapValue.ensureSize(BATCH_SIZE * MAP_SIZE, false);</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        BytesColumnVector name = (BytesColumnVector)batch.cols[<span class="number">0</span>];</span><br><span class="line">        BytesColumnVector id = (BytesColumnVector)batch.cols[<span class="number">1</span>];</span><br><span class="line">        BytesColumnVector desc = (BytesColumnVector)batch.cols[<span class="number">2</span>];</span><br><span class="line"></span><br><span class="line">        <span class="keyword">for</span> (<span class="keyword">int</span> r = <span class="number">0</span>; r &lt; <span class="number">5000</span>; ++r) &#123;</span><br><span class="line">            <span class="comment">// 刚开始batch.size = 0，在一个batch即r=1024的时候，r=row=batch.size</span></span><br><span class="line">            <span class="comment">// 到第第二个以后的batch时,r&gt;1023 , row = 0~1024 = batch.size</span></span><br><span class="line">            <span class="comment">// batch的col为0~1023，所以必须维护一个row，不能直接用r</span></span><br><span class="line">            <span class="keyword">int</span> row = batch.size++;</span><br><span class="line">            System.out.println(<span class="string">"r: "</span> + r + <span class="string">", row: "</span> + row + <span class="string">", batch.size: "</span> + batch.size);</span><br><span class="line">            <span class="comment">/**</span></span><br><span class="line"><span class="comment">             * BytesColumnVector: vector.setVal(row,data.getBytes())</span></span><br><span class="line"><span class="comment">             * LongColumnVector,DoubleColumnVector: vector.vector[row] = data</span></span><br><span class="line"><span class="comment">             * TimestampColumnVector: vector.set(row,Timestamp.class)</span></span><br><span class="line"><span class="comment">             *</span></span><br><span class="line"><span class="comment">             * // 处理map列偏移</span></span><br><span class="line"><span class="comment">             * 			map.offsets[row] = map.childCount;</span></span><br><span class="line"><span class="comment">             * 			map.lengths[row] = MAP_SIZE;</span></span><br><span class="line"><span class="comment">             * 			map.childCount += MAP_SIZE;</span></span><br><span class="line"><span class="comment">             * 	// 处理map列的值</span></span><br><span class="line"><span class="comment">             * 			for (int mapElem = (int) map.offsets[row]; mapElem &lt; map.offsets[row] + MAP_SIZE; ++mapElem) &#123;</span></span><br><span class="line"><span class="comment">             * 				String key = "row " + r + "." + (mapElem - map.offsets[row]);</span></span><br><span class="line"><span class="comment">             * 				mapKey.setVal(mapElem, key.getBytes(StandardCharsets.UTF_8));</span></span><br><span class="line"><span class="comment">             * 				mapValue.vector[mapElem] = mapElem;</span></span><br><span class="line"><span class="comment">             *          &#125;</span></span><br><span class="line"><span class="comment">             *</span></span><br><span class="line"><span class="comment">             */</span></span><br><span class="line">            name.setVal(row,(<span class="string">"user-"</span> + r + <span class="string">"-"</span> + row).getBytes());</span><br><span class="line">            id.setVal(row,(<span class="string">"password-"</span> + r + <span class="string">"-"</span> + row).getBytes());</span><br><span class="line">            desc.setVal(row,(<span class="string">"desc-"</span> + r + <span class="string">"-"</span> + row).getBytes());</span><br><span class="line">            total = total + <span class="number">1</span>;</span><br><span class="line">            <span class="comment">// 默认每个batch为1024行，如果满了，则新起一个batch.</span></span><br><span class="line">            <span class="keyword">if</span> (batch.size == batch.getMaxSize()) &#123;</span><br><span class="line">                <span class="comment">// 写入orc文件</span></span><br><span class="line">                writer.addRowBatch(batch);</span><br><span class="line">                <span class="comment">// 重置（清空）batch</span></span><br><span class="line">                batch.reset();</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 确保没有遗漏的数据，因为在for循环里只有batch满了才会写入</span></span><br><span class="line">        <span class="keyword">if</span> (batch.size != <span class="number">0</span>) &#123;</span><br><span class="line">            writer.addRowBatch(batch);</span><br><span class="line">            batch.reset();</span><br><span class="line">        &#125;</span><br><span class="line">        writer.close();</span><br><span class="line">        <span class="keyword">return</span> total;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/Hive/" rel="tag"><i class="fa fa-tag"></i> Hive</a>
+          
+            <a href="/tags/Orc/" rel="tag"><i class="fa fa-tag"></i> Orc</a>
+          
+            <a href="/tags/Java/" rel="tag"><i class="fa fa-tag"></i> Java</a>
+          
+            <a href="/tags/HDFS/" rel="tag"><i class="fa fa-tag"></i> HDFS</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2019/08/19/local-data-to-orc-error/" rel="next" title="load本地数据到hive的Orc表失败">
+                <i class="fa fa-chevron-left"></i> load本地数据到hive的Orc表失败
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+    <div class="comments" id="comments">
+    </div>
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image"
+                src="/uploads/avatar.jpeg"
+                alt="Shyo" />
+            
+              <p class="site-author-name" itemprop="name">Shyo</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/%7C%7C%20archive">
+              
+                  <span class="site-state-item-count">5</span>
+                  <span class="site-state-item-name">日志</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">3</span>
+                  <span class="site-state-item-name">分类</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">12</span>
+                  <span class="site-state-item-name">标签</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/shyocc" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#ORC"><span class="nav-number">1.</span> <span class="nav-text">ORC</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#ORC简介"><span class="nav-number">1.1.</span> <span class="nav-text">ORC简介</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ORC文件结构"><span class="nav-number">1.2.</span> <span class="nav-text">ORC文件结构</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#名词解释"><span class="nav-number">1.2.1.</span> <span class="nav-text">名词解释</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#列式存储"><span class="nav-number">1.2.2.</span> <span class="nav-text">列式存储</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Java代码"><span class="nav-number">1.3.</span> <span class="nav-text">Java代码</span></a></li></ol></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; 2018 &mdash; <span itemprop="copyrightYear">2019</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Shyo</span>
+
+  
+</div>
+
+<!-- 
+
+  <div class="powered-by">由 <a class="theme-link" target="_blank" href="https://hexo.io">Hexo</a> 强力驱动</div>
+
+
+
+  <span class="post-meta-divider">|</span>
+
+
+
+  <div class="theme-info">主题 &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Pisces</a> v5.1.4</div>
+
+-->
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+  
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/canvas-nest/canvas-nest.min.js"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/three/three.min.js"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/three/canvas_sphere.min.js"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+
+  <script type="text/javascript" src="/js/src/affix.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/schemes/pisces.js?v=5.1.4"></script>
+
+
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+  <script src="//cdn1.lncld.net/static/js/3.0.4/av-min.js"></script>
+  <script src="//unpkg.com/valine/dist/Valine.min.js"></script>
+  
+  <script type="text/javascript">
+    var GUEST = ['nick','mail','link'];
+    var guest = 'nick,mail';
+    guest = guest.split(',').filter(item=>{
+      return GUEST.indexOf(item)>-1;
+    });
+    new Valine({
+        el: '#comments' ,
+        verify: false,
+        notify: false,
+        appId: 'Gope62a1n0o5h0U2edUFqm07-gzGzoHsz',
+        appKey: 'AjRia4ddVLqPOuxtIyseyc2H',
+        placeholder: 'ヾﾉ≧∀≦)o 不想说点什么吗',
+        avatar:'mm',
+        guest_info:guest,
+        pageSize:'10' || 10,
+    });
+  </script>
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

@@ -1,0 +1,1218 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next pisces use-motion" lang="zh-Hans">
+<head>
+  <meta charset="UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta name="theme-color" content="#222">
+
+
+
+
+  
+  
+    
+    
+  <script src="/lib/pace/pace.min.js?v=1.0.2"></script>
+  <link href="/lib/pace/pace-theme-flash.min.css?v=1.0.2" rel="stylesheet">
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css" />
+
+
+
+
+  
+  
+  
+  
+
+  
+    
+    
+  
+
+  
+    
+      
+    
+
+    
+  
+
+  
+
+  
+    
+      
+    
+
+    
+  
+
+  
+    
+      
+    
+
+    
+  
+
+  
+    
+    
+    <link href="//fonts.googleapis.com/css?family=Lato:300,300italic,400,400italic,700,700italic|Roboto Slab:300,300italic,400,400italic,700,700italic|Appo paint:300,300italic,400,400italic,700,700italic|PT Mono:300,300italic,400,400italic,700,700italic&subset=latin,latin-ext" rel="stylesheet" type="text/css">
+  
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css" />
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css" />
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon.ico?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon.ico?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="Hadoop,CDH,环境搭建,core-site,hdfs-site,yarn-site,mapred-site," />
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="Hadoop四个配置文件主要property说明core-site.xml   Property Description Default Value    fs.defalutFS 缺省的文件URI标识设定,HDFS路径(URI),使用Java API操作hdfs时需要conf.set该值 NULL   fs.defalut.name 同上，不同之处在于集群的NN是否为HA，是的话使用fs.def">
+<meta name="keywords" content="Hadoop,CDH,环境搭建,core-site,hdfs-site,yarn-site,mapred-site">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Hadoop四个配置文件主要properties说明">
+<meta property="og:url" content="http:&#x2F;&#x2F;yoursite.com&#x2F;2019&#x2F;08&#x2F;12&#x2F;hadoop-properties&#x2F;index.html">
+<meta property="og:site_name" content="Shyo&#39;s Blog">
+<meta property="og:description" content="Hadoop四个配置文件主要property说明core-site.xml   Property Description Default Value    fs.defalutFS 缺省的文件URI标识设定,HDFS路径(URI),使用Java API操作hdfs时需要conf.set该值 NULL   fs.defalut.name 同上，不同之处在于集群的NN是否为HA，是的话使用fs.def">
+<meta property="og:locale" content="zh-Hans">
+<meta property="og:updated_time" content="2019-11-20T11:00:02.856Z">
+<meta name="twitter:card" content="summary">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Pisces',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: 'Shyo'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="http://yoursite.com/2019/08/12/hadoop-properties/"/>
+
+
+
+
+
+  <title>Hadoop四个配置文件主要properties说明 | Shyo's Blog</title>
+  
+
+
+
+
+
+  <script type="text/javascript">
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "https://hm.baidu.com/hm.js?916af8d1ac6a727be47477691fc405a2";
+      var s = document.getElementsByTagName("script")[0];
+      s.parentNode.insertBefore(hm, s);
+    })();
+  </script>
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/"  class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">Shyo's Blog</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle">只是你迟到一千年 黄昏后就不会有夜</p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br />
+            
+            首页
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br />
+            
+            标签
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-categories">
+          <a href="/categories/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-th"></i> <br />
+            
+            分类
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br />
+            
+            归档
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2019/08/12/hadoop-properties/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="Shyo">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/uploads/avatar.jpeg">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Shyo's Blog">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">Hadoop四个配置文件主要properties说明</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2019-08-12T18:55:13+08:00">
+                2019-08-12
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">分类于</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E5%A4%A7%E6%95%B0%E6%8D%AE/" itemprop="url" rel="index">
+                    <span itemprop="name">大数据</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+              <span class="post-comments-count">
+                <span class="post-meta-divider">|</span>
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-comment-o"></i>
+                </span>
+                <a href="/2019/08/12/hadoop-properties/#comments" itemprop="discussionUrl">
+                  <span class="post-comments-count valine-comment-count" data-xid="/2019/08/12/hadoop-properties/" itemprop="commentCount"></span>
+                </a>
+              </span>
+            
+          
+
+          
+          
+
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h2 id="Hadoop四个配置文件主要property说明"><a href="#Hadoop四个配置文件主要property说明" class="headerlink" title="Hadoop四个配置文件主要property说明"></a>Hadoop四个配置文件主要property说明</h2><h3 id="core-site-xml"><a href="#core-site-xml" class="headerlink" title="core-site.xml"></a>core-site.xml</h3><table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Description</th>
+<th>Default Value</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>fs.defalutFS</td>
+<td>缺省的文件URI标识设定,HDFS路径(URI),使用Java API操作hdfs时需要conf.set该值</td>
+<td>NULL</td>
+</tr>
+<tr>
+<td>fs.defalut.name</td>
+<td>同上，不同之处在于集群的NN是否为HA，是的话使用fs.defaultFS，不是的话使用fs.default.name</td>
+<td>NULL</td>
+</tr>
+<tr>
+<td>hadoop.tmp.dir</td>
+<td>NameNode、DataNode、JournalNode等存放数据的公共目录，使用默认的值时服务器重启后，该路径下数据会情况，建议配置一个持久化路径</td>
+<td>/tmp/{$user}</td>
+</tr>
+<tr>
+<td>ha.zookeeper.quorum</td>
+<td>NameNode HA时，配置ZooKeeper节点，以逗号隔开。注意，数量一定是奇数，且不少于三个节点</td>
+<td>null</td>
+</tr>
+<tr>
+<td>hadoop.logfile.size</td>
+<td>每个日志文件的最大值，单位：bytes</td>
+<td>10000000 (10M)</td>
+</tr>
+<tr>
+<td>hadoop.logfile.count</td>
+<td>日志文件的最大数量</td>
+<td>10</td>
+</tr>
+<tr>
+<td>io.file.buffer.size</td>
+<td>流文件的缓冲区大小(K)</td>
+<td>4096</td>
+</tr>
+<tr>
+<td>hadoop.security.authorization</td>
+<td>HDFS用户访问权限,服务端认证</td>
+<td>false</td>
+</tr>
+<tr>
+<td>### hdfs-site.xml</td>
+<td></td>
+<td></td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Description</th>
+<th>Default Value</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>dfs.namenode.name.dir</td>
+<td>指定一个本地文件系统路径，决定NN在何处存放fsimage。可以通过逗号分隔指定多个路径，在Hadoop1.0时代这是一种为NN做高可用的方法，但目前有更完善的Journal Node解决方案，留默认值即可</td>
+<td>null</td>
+</tr>
+<tr>
+<td>dfs.replication</td>
+<td>DataNode存储block的副本数量(不大于datanode数量最好)</td>
+<td>3</td>
+</tr>
+<tr>
+<td>dfs.permissions</td>
+<td>文件操作时的权限检查标识,如果是 true，则打开权限系统。如果是 false，权限检查 就是关闭的，但是其他的行为没有改变。这个配置参数的改变并不改变文件或目录的模式、所有者和组等信息。不管权限模式是开还是关，chmod，chgrp 和 chown 总是 会检查权限。</td>
+<td>true</td>
+</tr>
+<tr>
+<td>dfs.permissions.enabled</td>
+<td>默认为true。如果为true，则启用HDFS的权限检查，否则不启用。在生产 环境，一定要启用，测试环境可以自行决定。</td>
+<td>true</td>
+</tr>
+<tr>
+<td>dfs.permissions.superusergroup</td>
+<td>默认supergroup，指定HDFS的超级用户组的组名，可按需设置。</td>
+<td>null</td>
+</tr>
+<tr>
+<td>dfs.datanode.data.dir</td>
+<td>指定DN存放块数据的本地盘路径，可以通过逗号分隔指定多个路径。在生产环境可能会在一个DN上挂多块盘，因此需要修改该值。默认file://${hadoop.tmp.dir}/dfs/data</td>
+<td>/dfs/data</td>
+</tr>
+<tr>
+<td>dfs.blocksize</td>
+<td>块大小。对大多数生产环境来说是一个比较稳妥的值。因为该值决定了MR的默认map数，也会影响NN消耗的内存量， 需要谨慎修改</td>
+<td>默认为134217728，即128MB</td>
+</tr>
+<tr>
+<td>dfs.namenode.handler.count</td>
+<td>NN处理rpc请求的线程数，默认为10，对大多数集群来说该值过小，设置该值的一般原则是将其设置为集群大小的自然对数乘以20，即20logN，N为集群大小。例如对100个节点的集群该值可以设到90</td>
+<td>看情况</td>
+</tr>
+<tr>
+<td>dfs.datanode.balance.bandwidthPerSec</td>
+<td>HDFS做均衡时使用的最大带宽</td>
+<td>1048576，即1MB/s</td>
+</tr>
+<tr>
+<td>dfs.hosts / dfs.hosts.exclude</td>
+<td>指定连接NN的主机的白/黑名单。通常黑名单比较有用，例如在对DN进行 更换硬盘操作时，可以先将其加入黑名单进行摘除，等运维操作结束后再放行</td>
+<td>null</td>
+</tr>
+<tr>
+<td>dfs.datanode.failed.volumes.tolerated</td>
+<td>DN多少块盘损坏后停止服务，即一旦任何磁盘故障DN即关闭,对盘较多的集群（例如每DN12块盘），磁盘故障是常态，通常可以将该值设置为1或2，避免频繁有DN下线</td>
+<td>默认为0</td>
+</tr>
+<tr>
+<td>dfs.ha.automatic-failover.enabled</td>
+<td>是否启用HDFS的自动故障转移，默认为false。像CDH等发行版，如果打开 HDFS HA后，该值会被自动更新为true，因此通常不需要自己改动</td>
+<td>false</td>
+</tr>
+<tr>
+<td>dfs.support.append</td>
+<td>是否启用HDFS的追加写入支持，默认为true。老版本Hadoop上append功能有bug，因此该值曾经默认为false，但现在已经可以放心使用true，有老集群升级上来的需要调整。</td>
+<td>true</td>
+</tr>
+<tr>
+<td>dfs.encrypt.data.transfer</td>
+<td>HDFS数据在网络上传输时是否加密。如果Hadoop集群运行 在非安全网络上，可以考虑开启该参数，但会带来一些CPU开销。通常 Hadoop都会在私有网络内部署，不需要动该值。</td>
+<td>false</td>
+</tr>
+<tr>
+<td>dfs.client.read.shortcircuit</td>
+<td>是否开启HDFS的短路本地读，默认为false。像CDH等发行版会默认将该参 数打开，并且如果在任何一种Hadoop上安装Impala，也需要打开该参数。 打开后，还需要设置dfs.domain.socket.path参数以指定一个Unix Socket文件的路径。</td>
+<td>false</td>
+</tr>
+<tr>
+<td>dfs.datanode.handler.count</td>
+<td>数据节点的服务器线程数。可适当增加这个数值来提升DataNode RPC服务的并发度。 在DataNode上设定,取决于系统的繁忙程度,设置太小会导致性能下降甚至报错。线程数的提高将增加DataNode的内存需求，因此，不宜过度调整这个数值。</td>
+<td>默认为10</td>
+</tr>
+<tr>
+<td>dfs.datanode.max.transfer.threads (dfs.datanode.max.xcievers）</td>
+<td>DataNode可以同时处理的数据传输连接数,即指定在DataNode内外传输数据使用的最大线程数。</td>
+<td>默认值为4096。推荐值为8192。</td>
+</tr>
+<tr>
+<td>dfs.namenode.avoid.read.stale.datanode</td>
+<td>指示是否避免读取“过时”的数据节点（DataNode），这些数据节点（DataNode）的心跳消息在指定的时间间隔内未被名称节点（NameNode）接收。过时的数据节点（DataNode）将移动到返回供读取的节点列表的末尾。有关写入的类似设置，请参阅df.namenode.avoint.write.stale.datanode。</td>
+<td>默认false，推荐true</td>
+</tr>
+<tr>
+<td>dfs.namenode.avoid.write.stale.datanode</td>
+<td>指示超过失效 DataNode 时间间隔 NameNode 未收到检测信号信息时是否避免写入失效 DataNode。写入应避免使用失效 DataNode，除非多个已配置比率 (dfs.namenode.write.stale.datanode.ratio) 的 DataNode 标记为失效。有关读取的类似设置，请参阅 dfs.namenode.avoid.read.stale.datanode。</td>
+<td>默认false，推荐true</td>
+</tr>
+<tr>
+<td>dfs.datanode.du.reserved</td>
+<td>当DataNode向NameNode汇报可用的硬盘大小的时候，它会把所有dfs.data.dir所列出的可用的硬盘大小总和发给NameNode。由于mapred.local.dir经常会跟DataNode共享可用的硬盘资源，因此我们需要为Mapreduce任务保留一些硬盘资源。dfs.datanode.du.reserved定义了每个dfs.data.dir所定义的硬盘空间需要保留的大小，以byte为单位。默认情况下，该值为0，也就是说HDFS可以使用每个数据硬盘的所有空间，节点硬盘资源耗尽时就会进入读模式。因此，建议每个硬盘都为map任务保留最少10GB的空间，如果每个Mapreduce作业都会产生大量的中间结果，或者每个硬盘空间都比较大（超过2TB），那么建议相应的增大保留的硬盘空间。我在生产环境中设置改值的大小为50G字节！</td>
+<td>0</td>
+</tr>
+<tr>
+<td>### yarn-site.xml</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Property</td>
+<td>Description</td>
+<td>Default Value</td>
+</tr>
+<tr>
+<td>———</td>
+<td>————</td>
+<td>—————</td>
+</tr>
+<tr>
+<td>yarn.nodemanager.aux-services</td>
+<td>NodeManager上运行的附属服务。需配置成mapreduce_shuffle，才可运行MapReduce程序</td>
+<td>mapreduce_shuffle</td>
+</tr>
+<tr>
+<td>yarn.resourcemanager.hostname</td>
+<td>指定RM运行的服务器</td>
+<td>master</td>
+</tr>
+<tr>
+<td>yarn.resourcemanager.address</td>
+<td>ResourceManager提供客户端访问的地址。客户端通过该地址向RM提交应用程序，杀死应用程序等</td>
+<td>0.0.0.0:8032</td>
+</tr>
+<tr>
+<td>yarn.resourcemanager.scheduler.address</td>
+<td>RM提供给ApplicationMaster的访问地址。ApplicationMaster同通过该地址向RM申请资源、释放资源等</td>
+<td>0.0.0.0:8030</td>
+</tr>
+<tr>
+<td>yarn.resoucemanager.resource.resource-tracker.address</td>
+<td>RM提供NodeManager的地址。NodeManager通过该地址向RM汇报心跳，领取任务等</td>
+<td>0.0.0.0:8031</td>
+</tr>
+<tr>
+<td>yarn.resourcemanager.admin.address</td>
+<td>RM提供管理员的访问地址。管理员通过该地址向RM发送管理命令等</td>
+<td>0.0.0.0:8033</td>
+</tr>
+<tr>
+<td>yarn.resourcemanager.webapp.address</td>
+<td>RM对web服务提供地址。用户可通过该地址在浏览器中查看集群各类信息</td>
+<td>0.0.0.0:8088</td>
+</tr>
+<tr>
+<td>### mapred-site.xml</td>
+<td></td>
+<td></td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Description</th>
+<th>Default Value</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>mapreduce.cluster.local.dir</td>
+<td>mapred做本地计算所使用的文件夹，可以配置多块硬盘，逗号分隔</td>
+<td>${hadoop.tmp.dir}/mapred/local</td>
+</tr>
+<tr>
+<td>mapreduce.jobtracker.system.dir</td>
+<td>mapred存放控制文件所使用的文件夹，可配置多块硬盘，逗号分隔。</td>
+<td>${hadoop.tmp.dir}/mapred/system</td>
+</tr>
+<tr>
+<td>mapreduce.jobtracker.staging.root.dir</td>
+<td>用来存放与每个job相关的数据</td>
+<td>${hadoop.tmp.dir}/mapred/staging</td>
+</tr>
+<tr>
+<td>mapreduce.jobtracker.jobhistory.location</td>
+<td>job历史文件保存路径，默认在logs的history文件夹下。</td>
+<td>null</td>
+</tr>
+<tr>
+<td>mapreduce.task.io.sort.factor</td>
+<td>排序文件时用于合并的流数量，即打开的文件句柄数</td>
+<td>10</td>
+</tr>
+<tr>
+<td>mapreduce.task.io.sort.mb</td>
+<td>排序文件时总的内存量（MB），默认每个合并流1MB</td>
+<td>100</td>
+</tr>
+<tr>
+<td>mapreduce.map.sort.spill.percent</td>
+<td>Map阶段溢写文件的阈值（排序缓冲区大小的百分比）</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>mapreduce.jobtracker.http.address</td>
+<td>jobtracker的tracker页面服务监听地址</td>
+<td>0.0.0.0:50030</td>
+</tr>
+<tr>
+<td>mapreduce.job.running.map.limit</td>
+<td>单个任务并发的最大map数，0或负数没有限制</td>
+<td>0</td>
+</tr>
+<tr>
+<td>mapreduce.job.running.reduce.limit</td>
+<td>单个任务并发的最大reduce数，0或负数没有限制</td>
+<td>0</td>
+</tr>
+<tr>
+<td>mapreduce.map.memory.mb</td>
+<td>每个Map Task需要的内存量</td>
+<td>1024</td>
+</tr>
+<tr>
+<td>mapreduce.map.cpu.vcores</td>
+<td>每个Map Task需要的虚拟CPU个数</td>
+<td>1</td>
+</tr>
+<tr>
+<td>mapreduce.reduce.memory.mb</td>
+<td>每个Reduce Task需要的内存量</td>
+<td>1024</td>
+</tr>
+<tr>
+<td>mapreduce.reduce.cpu.vcores</td>
+<td>每个Reduce Task需要的虚拟CPU个数</td>
+<td>1</td>
+</tr>
+<tr>
+<td>mapreduce.reduce.shuffle.merge.percent</td>
+<td>超过shuffle最大内存的一定限度后，开始往磁盘刷</td>
+<td>0.66</td>
+</tr>
+<tr>
+<td>mapreduce.reduce.shuffle.input.buffer.percent</td>
+<td>shuffile在reduce内存中的数据最多使用内存量</td>
+<td>0.70</td>
+</tr>
+<tr>
+<td>mapreduce.reduce.shuffle.memory.limit.percent</td>
+<td>每个fetch取到的输出的大小能够占的内存比的大小，所以，如果我们想fetch不进磁盘的话，可以适当调大这个值</td>
+<td>0.25</td>
+</tr>
+<tr>
+<td>mapreduce.map.output.compress</td>
+<td>map输出结果是否要压缩</td>
+<td>false</td>
+</tr>
+<tr>
+<td>mapreduce.reduce.shuffle.parallelcopies</td>
+<td>Reduce Task启动的并发拷贝数据的线程数目</td>
+<td>5</td>
+</tr>
+<tr>
+<td>mapreduce.jobhistory.address</td>
+<td>MapReduce JobHistory Server IPC地址</td>
+<td>0.0.0.0:10020</td>
+</tr>
+<tr>
+<td>mapreduce.jobhistory.webapp.address</td>
+<td>MapReduce JobHistory Server Web UI地址</td>
+<td>0.0.0.0:19888</td>
+</tr>
+<tr>
+<td>mapreduce.jobhistory.admin.address</td>
+<td>History Server的管理地址</td>
+<td>0.0.0.0:10033</td>
+</tr>
+<tr>
+<td>mapreduce.input.fileinputformat.split.minsize</td>
+<td>map任务输入数据块最小大小</td>
+<td>0</td>
+</tr>
+<tr>
+<td>yarn.app.mapreduce.am.command-opts</td>
+<td>MR App master的java选项</td>
+<td>-Xmx1024m</td>
+</tr>
+</tbody></table>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/Hadoop/" rel="tag"><i class="fa fa-tag"></i> Hadoop</a>
+          
+            <a href="/tags/CDH/" rel="tag"><i class="fa fa-tag"></i> CDH</a>
+          
+            <a href="/tags/%E7%8E%AF%E5%A2%83%E6%90%AD%E5%BB%BA/" rel="tag"><i class="fa fa-tag"></i> 环境搭建</a>
+          
+            <a href="/tags/core-site/" rel="tag"><i class="fa fa-tag"></i> core-site</a>
+          
+            <a href="/tags/hdfs-site/" rel="tag"><i class="fa fa-tag"></i> hdfs-site</a>
+          
+            <a href="/tags/yarn-site/" rel="tag"><i class="fa fa-tag"></i> yarn-site</a>
+          
+            <a href="/tags/mapred-site/" rel="tag"><i class="fa fa-tag"></i> mapred-site</a>
+          
+        </div>
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2019/08/14/buid-hadoop-cdh/" rel="prev" title="搭建adoop2.6-CDH5.8.3集群">
+                搭建adoop2.6-CDH5.8.3集群 <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+    <div class="comments" id="comments">
+    </div>
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image"
+                src="/uploads/avatar.jpeg"
+                alt="Shyo" />
+            
+              <p class="site-author-name" itemprop="name">Shyo</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/%7C%7C%20archive">
+              
+                  <span class="site-state-item-count">5</span>
+                  <span class="site-state-item-name">日志</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">3</span>
+                  <span class="site-state-item-name">分类</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">12</span>
+                  <span class="site-state-item-name">标签</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/shyocc" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Hadoop四个配置文件主要property说明"><span class="nav-number">1.</span> <span class="nav-text">Hadoop四个配置文件主要property说明</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#core-site-xml"><span class="nav-number">1.1.</span> <span class="nav-text">core-site.xml</span></a></li></ol></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; 2018 &mdash; <span itemprop="copyrightYear">2019</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Shyo</span>
+
+  
+</div>
+
+<!-- 
+
+  <div class="powered-by">由 <a class="theme-link" target="_blank" href="https://hexo.io">Hexo</a> 强力驱动</div>
+
+
+
+  <span class="post-meta-divider">|</span>
+
+
+
+  <div class="theme-info">主题 &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Pisces</a> v5.1.4</div>
+
+-->
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+  
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/canvas-nest/canvas-nest.min.js"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/three/three.min.js"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/three/canvas_sphere.min.js"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+
+  <script type="text/javascript" src="/js/src/affix.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/schemes/pisces.js?v=5.1.4"></script>
+
+
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+  <script src="//cdn1.lncld.net/static/js/3.0.4/av-min.js"></script>
+  <script src="//unpkg.com/valine/dist/Valine.min.js"></script>
+  
+  <script type="text/javascript">
+    var GUEST = ['nick','mail','link'];
+    var guest = 'nick,mail';
+    guest = guest.split(',').filter(item=>{
+      return GUEST.indexOf(item)>-1;
+    });
+    new Valine({
+        el: '#comments' ,
+        verify: false,
+        notify: false,
+        appId: 'Gope62a1n0o5h0U2edUFqm07-gzGzoHsz',
+        appKey: 'AjRia4ddVLqPOuxtIyseyc2H',
+        placeholder: 'ヾﾉ≧∀≦)o 不想说点什么吗',
+        avatar:'mm',
+        guest_info:guest,
+        pageSize:'10' || 10,
+    });
+  </script>
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>
